@@ -113,7 +113,7 @@ class EncoderDecoderModel(nn.Module):
         loss = nn.NLLLoss(ignore_index=0).forward(flat_logits, flat_targets)
         return loss
     
-    def loss(self, src_seq, tgt_seq):
+    def forward(self, src_seq, tgt_seq):
         """
         Forward to compute the loss.
         """
