@@ -91,7 +91,7 @@ class EncoderDecoderModel(nn.Module):
                 states[state_name] = context["init_{}".format(state_name)]
                 del context["init_{}".format(state_name)]
             else:
-                states[state_name] = Variable(torch.zeros((B, self._hidden_size))).cuda()
+                states[state_name] = Variable(torch.zeros((1, B, self._hidden_size))).cuda()
         if extra_states is not None:
             extra_states.update(extra_states)
         # Process mask
