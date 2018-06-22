@@ -44,7 +44,7 @@ class AttentionModel(EncoderDecoderModel):
     def decode_step(self, context, states):
         feedback_embed = context.feedback_embeds[states.t]
         last_dec_hidden = states.hidden.squeeze(0)
-        import pdb.set_trace()
+        import pdb;pdb.set_trace()
         # Attention
         attention_query = last_dec_hidden + feedback_embed
         attention_logits = (attention_query[:, None, :] * context.keys).sum(dim=2)
