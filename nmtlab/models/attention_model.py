@@ -46,7 +46,6 @@ class AttentionModel(EncoderDecoderModel):
         last_dec_hidden = states.state[0].squeeze()
         # Attention
         attention_query = last_dec_hidden + feedback_embed
-        import pdb;pdb.set_trace()
         attention_logits = (attention_query[:, None, :] * context.keys).sum(dim=2)
         attention_logits -= context.attention_penalty
         attention_weights = F.softmax(attention_logits, dim=1)
