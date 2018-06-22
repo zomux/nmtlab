@@ -28,7 +28,7 @@ class EncoderDecoderModel(nn.Module):
         self._embed_size = embed_size
         self._src_vocab_size = src_vocab_size
         self._tgt_vocab_size = tgt_vocab_size
-        self._decoder_states = decoder_states if decoder_states else ["hidden", "state"]
+        self._decoder_states = decoder_states if decoder_states else ["hidden", "cell"]
         self._decoder_state_sizes = decoder_state_sizes if decoder_state_sizes else [self._hidden_size] * len(
             self._decoder_states)
         self._layers = []
