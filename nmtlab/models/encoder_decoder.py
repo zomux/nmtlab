@@ -17,7 +17,7 @@ from torch.autograd import Variable
 from nmtlab.utils import MapDict, LazyDict
 
 
-class EncoderDecoderModel(object):
+class EncoderDecoderModel(nn.Module):
     
     __metaclass__ = ABCMeta
 
