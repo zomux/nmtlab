@@ -43,7 +43,7 @@ class AttentionModel(EncoderDecoderModel):
 
     def decode_step(self, context, states):
         feedback_embed = context.feedback_embeds[states.t]
-        last_dec_hidden = states.state[0].squeeze()
+        last_dec_hidden = states.hidden[0].squeeze()
         # Attention
         attention_query = last_dec_hidden + feedback_embed
         attention_logits = (attention_query[:, None, :] * context.keys).sum(dim=2)
@@ -52,7 +52,7 @@ class AttentionModel(EncoderDecoderModel):
         context_vector = torch.bmm(attention_weights[:, None, :], context.encoder_states).squeeze(1)
         # Decode
         dec_input = torch.cat((context_vector, feedback_embed), 1)
-        states.hidden, states.state = self.decoder_rnn(dec_input[:, None, :], states.state)
+        states.hidden, states.cell = self.decoder_rnn(dec_input[:, None, :], states.state)
 
     def expand(self, decoder_outputs):
         decoder_hiddens = decoder_outputs["hidden"]
