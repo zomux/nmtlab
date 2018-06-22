@@ -90,7 +90,7 @@ class EncoderDecoderModel(nn.Module):
             if "init_{}".format(state_name) in context:
                 states[state_name] = context["init_{}".format(state_name)]
                 if len(states[state_name]) == 2:
-                    states[state_name] = states[state_name].
+                    states[state_name] = states[state_name]
                 del context["init_{}".format(state_name)]
             else:
                 states[state_name] = Variable(torch.zeros((1, B, self._hidden_size))).cuda()
