@@ -52,7 +52,7 @@ class AttentionModel(EncoderDecoderModel):
         context_vector = torch.bmm(attention_weights[:, None, :], context.encoder_states).squeeze(1)
         # Decode
         dec_input = torch.cat((context_vector, feedback_embed), 1)
-        states.hidden, states.cell = self.decoder_rnn(dec_input[:, None, :], (states.hidden, states.cell))
+        _, (states.hidden, states.cell) = self.decoder_rnn(dec_input[:, None, :], (states.hidden, states.cell))
 
     def expand(self, decoder_outputs):
         decoder_hiddens = decoder_outputs["hidden"]
