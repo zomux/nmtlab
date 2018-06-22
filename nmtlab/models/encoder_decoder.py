@@ -72,7 +72,7 @@ class EncoderDecoderModel(nn.Module):
     def post_decode(self, state_stack):
         lazydict = LazyDict()
         for state_name in self._decoder_states:
-            lazydict[state_name] = lambda name: torch.cat([m[name] for m in state_stack], 1)
+            lazydict[state_name] = lambda name: torch.cat([m[name] for m in state_stack], 0).view(1, 0, 2)
         return lazydict
     
     def pre_decode(self, encoder_outputs, tgt_seq, extra_states=None, src_mask=None, tgt_mask=None):
