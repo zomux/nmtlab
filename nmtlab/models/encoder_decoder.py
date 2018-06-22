@@ -89,6 +89,7 @@ class EncoderDecoderModel(nn.Module):
         for state_name, size in zip(self._decoder_states, self._decoder_state_sizes):
             if "init_{}".format(state_name) in context:
                 states[state_name] = context["init_{}".format(state_name)]
+                if 
                 del context["init_{}".format(state_name)]
             else:
                 states[state_name] = Variable(torch.zeros((1, B, self._hidden_size))).cuda()
