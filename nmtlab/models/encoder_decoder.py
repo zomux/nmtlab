@@ -89,6 +89,7 @@ class EncoderDecoderModel(nn.Module):
         for state_name, size in zip(self._decoder_states, self._decoder_state_sizes):
             if "init_{}".format(state_name) in context:
                 states[state_name] = context["init_{}".format(state_name)]
+                import pdb;pdb.set_trace()
                 if len(states[state_name]) == 2:
                     states[state_name] = states[state_name].unsqueeze(0)
                 del context["init_{}".format(state_name)]
