@@ -12,7 +12,7 @@ class LazyDictTest(unittest.TestCase):
         from nmtlab.utils.lazydict import LazyDict
         ldict = LazyDict()
         k = 2
-        ldict["item"] = lambda: k + 3
+        ldict["item"] = lambda name: k + 3
         retrieved_item = ldict.item
         self.assertEqual(retrieved_item, 5)
 

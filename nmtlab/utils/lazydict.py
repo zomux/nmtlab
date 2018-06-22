@@ -16,10 +16,10 @@ class LazyDict(Mapping):
         self._raw_dict = dict(*args, **kwargs)
     
     def __getattr__(self, attr):
-        return self._raw_dict.get(attr)()
+        return self._raw_dict.get(attr)(attr)
     
     def __getitem__(self, item):
-        return self._raw_dict.get(item)()
+        return self._raw_dict.get(item)(item)
     
     def __setitem__(self, key, func):
         self._raw_dict.update({key: func})
