@@ -52,7 +52,6 @@ class AttentionModel(EncoderDecoderModel):
         context_vector = torch.bmm(attention_weights[:, None, :], context.encoder_states).squeeze(1)
         # Decode
         dec_input = torch.cat((context_vector, feedback_embed), 1)
-        import pdb;pdb.set_trace()
         states.hidden, states.cell = self.decoder_rnn(dec_input[:, None, :], (states.hidden, states.cell))
 
     def expand(self, decoder_outputs):
