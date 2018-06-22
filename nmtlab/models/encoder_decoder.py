@@ -23,6 +23,7 @@ class EncoderDecoderModel(nn.Module):
 
     def __init__(self, hidden_size=512, embed_size=512, src_vocab_size=40000, tgt_vocab_size=40000,
                  decoder_states=None, decoder_state_sizes=None):
+        super(EncoderDecoderModel, self).__init__()
         self._hidden_size = hidden_size
         self._embed_size = embed_size
         self._src_vocab_size = src_vocab_size
