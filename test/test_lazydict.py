@@ -1,0 +1,18 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+from __future__ import absolute_import
+from __future__ import print_function
+
+import unittest
+
+class LazyDictTest(unittest.TestCase):
+    
+    def test_lazydict(self):
+        from nmtlab.utils.lazydict import LazyDict
+        ldict = LazyDict()
+        k = 2
+        ldict["item"] = lambda: k + 3
+        retrieved_item = ldict.item
+        self.assertEqual(retrieved_item, 5)
+
