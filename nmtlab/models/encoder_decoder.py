@@ -22,6 +22,7 @@ class EncoderDecoderModel(nn.Module):
     __metaclass__ = ABCMeta
 
     def __init__(self, hidden_size=512, embed_size=512, src_vocab_size=40000, tgt_vocab_size=40000,
+                 dataset=None,
                  decoder_states=None, decoder_state_sizes=None):
         super(EncoderDecoderModel, self).__init__()
         self._hidden_size = hidden_size
