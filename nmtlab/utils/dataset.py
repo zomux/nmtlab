@@ -8,7 +8,7 @@ from __future__ import print_function
 from collections import Mapping
 
 
-class LazyDict(Mapping):
+class MT(Mapping):
     """Lazily evaluated map
     """
     
