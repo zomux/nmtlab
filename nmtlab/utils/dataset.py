@@ -18,9 +18,9 @@ class MTDataset(object):
         self._batch_size = batch_size
         
         src = torchtext.data.Field(pad_token="<null>", preprocessing=lambda seq: ["<s>"] + seq + ["</s>"])
-        src.vocab = Vocab(src_vocab_path)
+        self._src_vocab = src.vocab = Vocab(src_vocab_path)
         tgt = torchtext.data.Field(pad_token="<null>", preprocessing=lambda seq: ["<s>"] + seq + ["</s>"])
-        tgt.vocab = Vocab(tgt_vocab_path)
+        self._tgt_vocab = tgt.vocab = Vocab(tgt_vocab_path)
         
         self._data = torchtext.data.TabularDataset(
             path=corpus_path, format='tsv',
@@ -39,4 +39,10 @@ class MTDataset(object):
             sort_key=lambda x: len(x.src),
             device=None, repeat=False)
         return iter(batch_iterator)
+    
+    def src_vocab(self):
+        return self._src_vocab
+    
+    def tgt_vocab(self):
+        return self._tgt_vocab
 
