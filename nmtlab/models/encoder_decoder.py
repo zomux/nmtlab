@@ -29,8 +29,11 @@ class EncoderDecoderModel(nn.Module):
             raise SystemError("src_vocab_size and tgt_vocab_size must be specified.")
         self._hidden_size = hidden_size
         self._embed_size = embed_size
-        self._src_vocab_size = src_vocab_size
-        self._tgt_vocab_size = tgt_vocab_size
+        if dataset is not None:
+            self._src_vocab_size, self._tgt_vocab_size = dataset.vocab_sizes()
+        else:
+            self._src_vocab_size = src_vocab_size
+            self._tgt_vocab_size = tgt_vocab_size
         self._decoder_states = decoder_states if decoder_states else ["hidden", "cell"]
         self._decoder_state_sizes = decoder_state_sizes if decoder_state_sizes else [self._hidden_size] * len(
             self._decoder_states)
