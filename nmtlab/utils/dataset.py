@@ -6,6 +6,8 @@ from __future__ import division
 from __future__ import print_function
 
 import torchtext
+from nmtlab.utils.vocab import Vocab
+
 
 class MTDataset(object):
     """Bilingual dataset.
@@ -13,6 +15,11 @@ class MTDataset(object):
     
     def __init__(self, corpus_path, src_vocab_path, tgt_vocab_path, max_length=60):
         self._max_length = max_length
+        src = torchtext.data.Field(pad_token="<null>", preprocessing=lambda seq: ["<s>"] + seq + ["</s>"])
+        src.vocab = Vocab(src_vocab_path)
+        tgt = torchtext.data.Field(pad_token="<null>", preprocessing=lambda seq: ["<s>"] + seq + ["</s>"])
+        tgt.vocab = Vocab(src_vocab_path)
+        
         self.train_data = torchtext.data.TabularDataset(
             path=corpus_path, format='tsv',
             fields=[('src', src), ('tgt', tgt)],
