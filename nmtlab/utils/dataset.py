@@ -13,8 +13,9 @@ class MTDataset(object):
     """Bilingual dataset.
     """
     
-    def __init__(self, corpus_path, src_vocab_path, tgt_vocab_path, max_length=60):
+    def __init__(self, corpus_path, src_vocab_path, tgt_vocab_path, batch_size=64, max_length=60):
         self._max_length = max_length
+        self._batch_size = batch_size
         
         src = torchtext.data.Field(pad_token="<null>", preprocessing=lambda seq: ["<s>"] + seq + ["</s>"])
         src.vocab = Vocab(src_vocab_path)
