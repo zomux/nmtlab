@@ -4,4 +4,4 @@
 from __future__ import print_function, division
 from six.moves import xrange, zip
 
-from .utils.vocab import Vocab
+from .utils.vocab2 import Vocab
