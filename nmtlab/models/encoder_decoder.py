@@ -21,10 +21,12 @@ class EncoderDecoderModel(nn.Module):
     
     __metaclass__ = ABCMeta
 
-    def __init__(self, hidden_size=512, embed_size=512, src_vocab_size=40000, tgt_vocab_size=40000,
+    def __init__(self, hidden_size=512, embed_size=512, src_vocab_size=None, tgt_vocab_size=None,
                  dataset=None,
                  decoder_states=None, decoder_state_sizes=None):
         super(EncoderDecoderModel, self).__init__()
+        if dataset is None and  (src_vocab_size is None or tgt_vocab_size is None):
+            raise SystemError("src_vocab_size and tgt_vocab_size must be specified.")
         self._hidden_size = hidden_size
         self._embed_size = embed_size
         self._src_vocab_size = src_vocab_size
