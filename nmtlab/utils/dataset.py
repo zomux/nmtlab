@@ -13,7 +13,7 @@ class MTDataset(object):
     
     def __init__(self, corpus_path, src_vocab_path, tgt_vocab_path, max_length=60):
         self.train_data = torchtext.data.TabularDataset(
-            path="{}/train.de-en.bpe20k".format(DATA_ROOT), format='tsv',
+            path=corpus_path, format='tsv',
             fields=[('src', src), ('tgt', tgt)],
             filter_pred=len_filter
         )
