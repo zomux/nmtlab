@@ -45,4 +45,6 @@ class MTDataset(object):
     
     def tgt_vocab(self):
         return self._tgt_vocab
-
+    
+    def vocab_sizes(self):
+        return self._src_vocab.size(), self._tgt_vocab.size()
