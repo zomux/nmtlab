@@ -15,10 +15,11 @@ class MTDataset(object):
     
     def __init__(self, corpus_path, src_vocab_path, tgt_vocab_path, max_length=60):
         self._max_length = max_length
+        
         src = torchtext.data.Field(pad_token="<null>", preprocessing=lambda seq: ["<s>"] + seq + ["</s>"])
         src.vocab = Vocab(src_vocab_path)
         tgt = torchtext.data.Field(pad_token="<null>", preprocessing=lambda seq: ["<s>"] + seq + ["</s>"])
-        tgt.vocab = Vocab(src_vocab_path)
+        tgt.vocab = Vocab(tgt_vocab_path)
         
         self.train_data = torchtext.data.TabularDataset(
             path=corpus_path, format='tsv',
