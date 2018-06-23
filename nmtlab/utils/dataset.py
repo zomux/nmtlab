@@ -5,11 +5,10 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from collections import Mapping
+import torchtext
 
-
-class MT(Mapping):
-    """Lazily evaluated map
+class MTDataset(object):
+    """Bilingual dataset.
     """
     
     def __init__(self, *args, **kwargs):
