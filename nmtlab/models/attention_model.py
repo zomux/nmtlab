@@ -41,8 +41,8 @@ class AttentionModel(EncoderDecoderModel):
     def lookup_feedback(self, feedback):
         return self.tgt_embed_layer(feedback)
 
-    def decode_step(self, context, states):
-        feedback_embed = context.feedback_embeds[:, states.t]
+    def decode_step(self, context, states, full_sequence=False):
+        feedback_embed = states.feedback_embed
         last_dec_hidden = states.hidden.squeeze(0)
         # Attention
         attention_query = last_dec_hidden + feedback_embed

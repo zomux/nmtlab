@@ -41,4 +41,6 @@ class MapDict(dict):
     def update(self, m):
         for k, v in m.items():
             self[k] = v
-
+    
+    def copy(self):
+        return MapDict(self)

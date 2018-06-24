@@ -21,14 +21,16 @@ class EncoderDecoderModel(nn.Module):
     
     __metaclass__ = ABCMeta
 
-    def __init__(self, hidden_size=512, embed_size=512, src_vocab_size=None, tgt_vocab_size=None,
+    def __init__(self, hidden_size=512, embed_size=512,
+                 src_vocab_size=None, tgt_vocab_size=None,
                  dataset=None,
                  decoder_states=None, decoder_state_sizes=None):
         super(EncoderDecoderModel, self).__init__()
-        if dataset is None and  (src_vocab_size is None or tgt_vocab_size is None):
+        if dataset is None and (src_vocab_size is None or tgt_vocab_size is None):
             raise SystemError("src_vocab_size and tgt_vocab_size must be specified.")
         self._hidden_size = hidden_size
         self._embed_size = embed_size
+        self._autoregressive = True
         if dataset is not None:
             self._src_vocab_size, self._tgt_vocab_size = dataset.vocab_sizes()
         else:
@@ -37,48 +39,63 @@ class EncoderDecoderModel(nn.Module):
         self._decoder_states = decoder_states if decoder_states else ["hidden", "cell"]
         self._decoder_state_sizes = decoder_state_sizes if decoder_state_sizes else [self._hidden_size] * len(
             self._decoder_states)
+        self._monitors = {}
         self._layers = []
         self.prepare()
+        
+    def set_autoregressive(self, flag=True):
+        """Set whether the model is autoregressive when training.
+        """
+        self._autoregressive = flag
 
     @abstractmethod
     def prepare(self):
-        """
-        Create layers.
+        """Create layers.
         """
 
     @abstractmethod
     def encode(self, src_seq, src_mask=None):
-        """
-        Encode input sequence and return a value map.
+        """Encode input sequence and return a value map.
         """
 
     @abstractmethod
     def lookup_feedback(self, feedback):
-        """
-        Get the word embeddings of feedback tokens.
+        """Get the word embeddings of feedback tokens.
         """
 
     @abstractmethod
-    def decode_step(self, context, states):
-        """
-        Computations of each decoding step.
+    def decode_step(self, context, states, full_sequence=False):
+        """Computations of each decoding step.
         """
 
-    def decode(self, context, states):
+    def decode(self, context, states, sampling=False):
         """Decode the output states.
         """
-        T = context.feedbacks.shape[1]
-        state_stack = []
-        for t in range(T - 1):
-            states[t] = t
-            states = self.decode_step(context, states)
-            state_stack.append(states)
-        return self.post_decode(state_stack)
+        if not self._autoregressive and not sampling:
+            return self.decode_step(context, states, full_sequence=True)
+        else:
+            T = context.feedbacks.shape[1]
+            state_stack = []
+            for t in range(T - 1):
+                states = states.copy()
+                states[t] = t
+                if sampling:
+                    logits = self.expand(states)
+                    feedback = logits.argmax(-1)
+                    states.sampled_token = feedback
+                    states.feedback_embed = self.lookup_feedback(feedback.squeeze(0))
+                else:
+                    states.feedback_embed = context.feedback_embeds[:, t]
+                states = self.decode_step(context, states)
+                state_stack.append(states)
+            return self.post_decode(state_stack)
 
     def post_decode(self, state_stack):
         lazydict = LazyDict()
-        for state_name in self._decoder_states:
-            lazydict[state_name] = lambda name: torch.cat([m[name] for m in state_stack], 0).permute(1, 0, 2)
+        for state_name in state_stack[0]:
+            tensor = state_stack[0][state_name]
+            if hasattr(tensor, "shape") and len(tensor.shape) >= 2:
+                lazydict[state_name] = lambda name: torch.cat([m[name] for m in state_stack], 0).transpose(1, 0)
         return lazydict
     
     def pre_decode(self, encoder_outputs, tgt_seq, extra_states=None, src_mask=None, tgt_mask=None):
@@ -116,12 +133,20 @@ class EncoderDecoderModel(nn.Module):
     def compute_loss(self, logits, tgt_seq, tgt_mask):
         B, T, _ = logits.shape
         logits = F.log_softmax(logits, dim=2)
-        flat_logits = logits.resize(B * T, self._tgt_vocab_size)
-        flat_targets = tgt_seq[:, 1:].resize(B * T)
+        flat_logits = logits.reshape(B * T, self._tgt_vocab_size)
+        flat_targets = tgt_seq[:, 1:].reshape(B * T)
+        flat_mask = tgt_mask[:, 1:].reshape(B * T)
         loss = nn.NLLLoss(ignore_index=0).forward(flat_logits, flat_targets)
+        word_acc = (flat_logits.argmax(1).eq(flat_targets) * flat_mask).sum().float() / flat_mask.sum().float()
+        self.monitor("word_acc", word_acc)
         return loss
     
-    def forward(self, src_seq, tgt_seq):
+    def monitor(self, key, value):
+        """Monitor a value with the key.
+        """
+        self._monitors[key] = value
+    
+    def forward(self, src_seq, tgt_seq, sampling=False):
         """
         Forward to compute the loss.
         """
@@ -131,6 +156,9 @@ class EncoderDecoderModel(nn.Module):
         context, states = self.pre_decode(encoder_outputs, tgt_seq, src_mask=src_mask, tgt_mask=tgt_mask)
         decoder_outputs = self.decode(context, states)
         logits = self.expand(decoder_outputs)
-
+        if sampling:
+            sample_outputs = self.decode(context, states, sampling=True)
+            self.monitor("sampled_tokens", sample_outputs.sampled_token)
         loss = self.compute_loss(logits, tgt_seq, tgt_mask)
-        return loss
+        self.monitor("loss", loss)
+        return self._monitors
