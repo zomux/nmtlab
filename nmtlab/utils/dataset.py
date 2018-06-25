@@ -78,6 +78,12 @@ class MTDataset(object):
             sort_key=lambda x: len(x.src),
             device=None, repeat=False)
         return batch_iterator
+    
+    def raw_train_data(self):
+        return self._train_data
+    
+    def raw_valid_data(self):
+        return self._valid_data
         
     def src_vocab(self):
         return self._src_vocab

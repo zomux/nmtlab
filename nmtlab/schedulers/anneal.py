@@ -7,7 +7,6 @@ from __future__ import print_function
 
 from nmtlab.schedulers.base import Scheduler
 
-
 class AnnealScheduler(Scheduler):
     """Scheduler for annealing learning rate.
     """
@@ -30,10 +29,8 @@ class AnnealScheduler(Scheduler):
             if self._anneal_count >= self._n_total_anneal:
                 self._finished = True
             else:
-                new_lr = self._optimizer.param_groups[0]["lr"] / self._anneal_factor
-                for g in self._optimizer.param_groups:
-                    g["lr"] = new_lr
-                print("Change learning rate to {}".format(new_lr))
+                new_lr = self._trainer.get_learning_rate() / self._anneal_factor
+                self._trainer.set_learning_rate(new_lr)
                 self._fail_count = 0
                 self._anneal_count += 1
     

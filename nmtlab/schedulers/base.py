@@ -10,13 +10,11 @@ class Scheduler(object):
     
     def __init__(self):
         self._binded = False
-        self._optimizer = None
-        self._model = None
+        self._trainer = None
     
-    def bind(self, model, optimizer):
+    def bind(self, trainer):
         self._binded = True
-        self._model = model
-        self._optimizer = optimizer
+        self._trainer = trainer
         
     def before_epoch(self, epoch):
         pass

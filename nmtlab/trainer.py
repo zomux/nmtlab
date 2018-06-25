@@ -19,6 +19,7 @@ from nmtlab.utils import MTDataset, smoothed_bleu
 from nmtlab.schedulers import Scheduler
 
 MAX_EPOCH = 10000
+ROOT_RANK = 0
 
 
 class MTTrainer(object):
@@ -51,16 +52,15 @@ class MTTrainer(object):
             torch.cuda.set_device(hvd.local_rank())
             self._model.cuda()
             self._optimizer = hvd.DistributedOptimizer(optimizer, named_parameters=self._model.named_parameters())
-            hvd.broadcast_parameters(self._model.state_dict(), root_rank=0)
+            hvd.broadcast_parameters(self._model.state_dict(), root_rank=ROOT_RANK)
             # Set the scope of training data
             self._dataset.set_gpu_scope(hvd.rank(), hvd.size())
             self._n_devices = hvd.size()
-            import pdb;pdb.set_trace()
         else:
             self._model.cuda()
-        # Initialize common variables
+            # Initialize common variables
         self._log_lines = []
-        self._scheduler.bind(self._model, self._optimizer)
+        self._scheduler.bind(self)
         self._best_criteria = 65535
         self._n_train_batch = self._dataset.n_train_batch()
         self._batch_size = self._dataset.batch_size()
@@ -74,6 +74,7 @@ class MTTrainer(object):
             self._optimizer.__class__.__name__, self._scheduler.__class__.__name__
         ))
         self._log("nmtlab", "Training data has {} batches".format(self._dataset.n_train_batch()))
+        self._report_valid_data_hash()
         self._log("nmtlab", "Running with {} GPUs".format(
             hvd.size() if multigpu else 1
         ))
@@ -91,6 +92,8 @@ class MTTrainer(object):
     def run(self):
         """Run the training from begining to end.
         """
+        if self._multigpu:
+            import horovod.torch as hvd
         for epoch in xrange(MAX_EPOCH):
             self._scheduler.before_epoch(epoch)
             self._begin_time = time.time()
@@ -100,7 +103,17 @@ class MTTrainer(object):
                 self.check_valid(epoch, step)
                 self.print_progress(epoch, step, val_map)
             self._scheduler.after_epoch(epoch)
+            # Check if finished
+            is_finished = self._scheduler.is_finished(epoch)
+            if self._multigpu:
+                flag_tensor = torch.tensor(1 if is_finished else 0)
+                flag_tensor = hvd.broadcast(flag_tensor, ROOT_RANK)
+                if flag_tensor > 0:
+                    break
+            elif is_finished:
+                break
             if self._scheduler.is_finished(epoch):
+                self._shared_finish_flag += 1
                 break
             self._log("nmtlab", "Ending epoch {}, spent {} minutes  ".format(
                 epoch + 1, int((time.time() - self._begin_time) / 60.)
@@ -132,7 +145,15 @@ class MTTrainer(object):
                 self._dict_str(score_map), " *" if is_improved else "",
                 epoch + 1, step + 1
             ))
-    
+        # Check new trainer settings
+        if step % self._valid_freq == 0 and self._multigpu:
+            import horovod.torch as hvd
+            lr = torch.tensor(self.get_learning_rate())
+            lr = hvd.broadcast(lr, ROOT_RANK)
+            new_lr = float(lr.numpy())
+            if new_lr != self.get_learning_rate():
+                self.set_learning_rate(new_lr)
+            
     def run_valid(self):
         """Run the model on the validation set and report loss.
         """
@@ -155,7 +176,7 @@ class MTTrainer(object):
     
     def check_improvement(self, score_map):
         cri = score_map[self._criteria]
-        if cri < self._best_criteria:
+        if cri < self._best_criteria * 0.999:
             self._best_criteria = cri
             self.save(0, 0)
             return True
@@ -191,6 +212,28 @@ class MTTrainer(object):
         state_dict = torch.load(self._save_path)
         self._model.load_state_dict(state_dict["model_state"])
         self._optimizer.load_state_dict(state_dict["optimizer_state"])
+        
+    def get_learning_rate(self):
+        return self._optimizer.param_groups[0]["lr"]
+
+    def set_learning_rate(self, lr):
+        for g in self._optimizer.param_groups:
+            g["lr"] = lr
+        if self._is_root_node():
+            self._log("nmtlab", "change learning rate to {:.6f}".format(lr))
+    
+    def _report_valid_data_hash(self):
+        """Report the hash number of the valid data.
+        
+        This is to ensure the valid scores are consistent in every runs.
+        """
+        import hashlib
+        valid_list = [
+            " ".join(example.tgt)
+            for example in self._dataset.raw_valid_data().examples
+        ]
+        valid_hash = hashlib.sha1("\n".join(valid_list).encode("utf-8", "ignore")).hexdigest()[-8:]
+        self._log("nmtlab", "Hash of validation data is {}".format(valid_hash))
     
     @staticmethod
     def _compute_bleu(sampled_tokens, tgt_seq):
@@ -216,7 +259,7 @@ class MTTrainer(object):
     def _is_root_node(self):
         if self._multigpu:
             import horovod.torch as hvd
-            return hvd.local_rank() == 0
+            return hvd.local_rank() == ROOT_RANK
         else:
             return True
 

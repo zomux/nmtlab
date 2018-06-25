@@ -13,6 +13,8 @@ import torch.nn.functional as F
 
 
 class AttentionModel(EncoderDecoderModel):
+    """Attention-based NMT with dot attention.
+    """
     
     def prepare(self):
         self.src_embed_layer = nn.Embedding(self._src_vocab_size, self._embed_size)
