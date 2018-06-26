@@ -8,39 +8,32 @@ from __future__ import print_function
 import numpy as np
 
 from nmtlab.decoding.beam_search import BeamSearchKit
-from nmtlab.models import EncoderDecoderModel
+from nmtlab.utils import MapDict
 
 import torch
+import torch.nn.functional as F
+
+MAX_STEPS = 300
+
 
 class BeamTranslator(BeamSearchKit):
     
-    def _encode(self, input_tokens):
-        input_tensor = torch.tensor([input_tokens])
-        if torch.cuda.is_available():
-            input_tensor.cuda()
-        input_mask = torch.gt(input_tensor, 0)
-        encoder_outputs = self.model.encode(input_tensor, input_mask)
-        return encoder_outputs
-    
     def beam_search(self, input_tokens, nbest=False):
-        encoder_outputs = self._encode(input_tokens)
+        self.model.train(False)
+        encoder_outputs = self.encode(input_tokens)
         # Beam search for the tokens
-        max_steps = 150
-        hyps, final_hyps = self.init_hyps(
-            init_state=encoder_outputs.init_state[0])
+        hyps, final_hyps = self.init_hyps(encoder_outputs)
         
-        for t in range(max_steps):
+        for t in range(MAX_STEPS):
             # Run in batch mode
-            batch_states = [hyp["state"] for hyp in hyps]
-            batch_last_token = [hyp["tokens"][-1] for hyp in hyps]
+            states = self.combine_states(hyps)
+            states.t = t
             
             # Decode
-            decoder_inputs = [t, batch_states, batch_last_token]
-            decoder_outputs = self.decoder_graph.compute(*decoder_inputs)
-            batch_new_states = decoder_outputs
+            batch_new_states = self.decode_step(encoder_outputs, states)
             
             # Prob
-            batch_logprobs = - np.log(self.expander_graph.compute(batch_new_states))
+            batch_logprobs = self.expand(batch_new_states)
             
             new_hyps = self.expand_hyps(hyps, batch_new_states, batch_logprobs, expand_num=self.beam_size)
             
@@ -71,3 +64,31 @@ class BeamTranslator(BeamSearchKit):
         score = best_hyp["logp"]
         tokens = best_hyp["tokens"]
         return tokens, score
+    
+    def combine_states(self, hyps):
+        states = MapDict()
+        # Combine states
+        for name in self.model.state_names():
+            states[name] = torch.cat([h["state"][name] for h in hyps], 1)
+        # Combine last tokens
+        last_tokens = torch.tensor([h["tokens"][-1] for h in hyps])
+        if torch.cuda.is_available():
+            last_tokens = last_tokens.cuda()
+            states.feedback_embed = self.model.lookup_feedback(last_tokens)
+        return states
+        
+    def encode(self, input_tokens):
+        input_tensor = torch.tensor([input_tokens])
+        if torch.cuda.is_available():
+            input_tensor = input_tensor.cuda()
+        input_mask = torch.gt(input_tensor, 0)
+        encoder_outputs = self.model.encode(input_tensor, input_mask)
+        return MapDict(encoder_outputs)
+    
+    def decode_step(self, context, states):
+        return self.model.decode_step(context, states)
+
+    def expand(self, states):
+        logits = self.model.expand(states).squeeze(0)
+        logp = - F.log_softmax(logits)
+        return logp

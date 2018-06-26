@@ -61,35 +61,21 @@ class BeamSearchKit(object):
         else:
             return None, None
     
-    def smart_init_hyps(self, encoder_outputs=None, items=None):
+    def init_hyps(self, encoder_outputs, items=None):
         final_hyps = []
         # hyp: state, tokens, sum of -log
-        state = np.zeros((self.model.decoder_hidden_size(),), dtype="float32")
-        for key, val in encoder_outputs.items():
-            if key.startswith("init_"):
-                real_key = key.replace("init_", "")
-                idx = self.model._decoder_states.index(real_key)
-                begin = sum(self.model._decoder_state_sizes[:idx], 0)
-                end = sum(self.model._decoder_state_sizes[:idx + 1], 0)
-                state[begin:end] = val[0]
+        states = MapDict()
+        for name, size in zip(self.model.state_names(), self.model.state_sizes()):
+            if "init_{}".format(name) in encoder_outputs:
+                states[name] = encoder_outputs["init_{}".format(name)]
+                if len(states[name].shape) == 2:
+                    states[name] = states[name].unsqueeze(0)
+            else:
+                states[name] = torch.zeros((1, 1, size))
+                if torch.cuda.is_available():
+                    states[name] = states[name].cuda()
         first_hyp = {
-            "state": state,
-            "tokens": [self.start_token_id],
-            "logp": 0.
-        }
-        if items:
-            first_hyp.update(items)
-        hyps = [first_hyp]
-        return hyps, final_hyps
-    
-    def init_hyps(self, init_state=None, items=None):
-        final_hyps = []
-        # hyp: state, tokens, sum of -log
-        state = np.zeros((self.model.decoder_hidden_size(),), dtype="float32")
-        if init_state is not None:
-            state[:init_state.shape[0]] = init_state
-        first_hyp = {
-            "state": state,
+            "state": states,
             "tokens": [self.start_token_id],
             "logp": 0.
         }

@@ -24,7 +24,7 @@ class EncoderDecoderModel(nn.Module):
     def __init__(self, hidden_size=512, embed_size=512,
                  src_vocab_size=None, tgt_vocab_size=None,
                  dataset=None,
-                 decoder_states=None, decoder_state_sizes=None):
+                 state_names=None, state_sizes=None):
         super(EncoderDecoderModel, self).__init__()
         if dataset is None and (src_vocab_size is None or tgt_vocab_size is None):
             raise SystemError("src_vocab_size and tgt_vocab_size must be specified.")
@@ -36,9 +36,9 @@ class EncoderDecoderModel(nn.Module):
         else:
             self._src_vocab_size = src_vocab_size
             self._tgt_vocab_size = tgt_vocab_size
-        self._decoder_states = decoder_states if decoder_states else ["hidden", "cell"]
-        self._decoder_state_sizes = decoder_state_sizes if decoder_state_sizes else [self._hidden_size] * len(
-            self._decoder_states)
+        self._state_names = state_names if state_names else ["hidden", "cell"]
+        self._state_sizes = state_sizes if state_sizes else [self._hidden_size] * len(
+            self._state_names)
         self._monitors = {}
         self._layers = []
         self.prepare()
@@ -91,9 +91,9 @@ class EncoderDecoderModel(nn.Module):
                     states.feedback_embed = context.feedback_embeds[:, t]
                 states = self.decode_step(context, states)
                 state_stack.append(states)
-            return self.post_decode(state_stack)
+            return self.combine_states(state_stack)
 
-    def post_decode(self, state_stack):
+    def combine_states(self, state_stack):
         lazydict = LazyDict()
         for state_name in state_stack[0]:
             tensor = state_stack[0][state_name]
@@ -112,7 +112,7 @@ class EncoderDecoderModel(nn.Module):
         context["feedbacks"] = tgt_seq
         context["feedback_embeds"] = feedback_embeds
         # Process initial states
-        for state_name, size in zip(self._decoder_states, self._decoder_state_sizes):
+        for state_name, size in zip(self._state_names, self._state_sizes):
             if "init_{}".format(state_name) in context:
                 states[state_name] = context["init_{}".format(state_name)]
                 if len(states[state_name].shape) == 2:
@@ -171,3 +171,9 @@ class EncoderDecoderModel(nn.Module):
         if "model_state" in state_dict:
             state_dict = state_dict["model_state"]
         self.load_state_dict(state_dict)
+        
+    def state_names(self):
+        return self._state_names
+    
+    def state_sizes(self):
+        return self._state_sizes
