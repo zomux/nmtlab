@@ -10,12 +10,17 @@ import numpy as np
 from nmtlab.decoding.beam_search import BeamSearchKit
 from nmtlab.models import EncoderDecoderModel
 
+import torch
 
 class BeamTranslator(BeamSearchKit):
     
     def _encode(self, input_tokens):
-        import pdb;pdb.set_trace()
-        self.model.encode()
+        input_tensor = torch.tensor([input_tokens])
+        if torch.cuda.is_available():
+            input_tensor.cuda()
+        input_mask = torch.gt(input_tensor, 0)
+        encoder_outputs = self.model.encode(input_tensor, input_mask)
+        return encoder_outputs
     
     def beam_search(self, input_tokens, nbest=False):
         encoder_outputs = self._encode(input_tokens)

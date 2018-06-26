@@ -11,15 +11,16 @@ from __future__ import print_function
 import numpy as np
 from nmtlab.models import EncoderDecoderModel
 from nmtlab.utils import MapDict
-from six.moves import cPickle
 import copy
 
+import torch
 
 class BeamSearchKit(object):
     
     def __init__(self, model, source_vocab, target_vocab, start_token="<s>", end_token="</s>", beam_size=5, opts=None):
         assert isinstance(model, EncoderDecoderModel)
-        model.cuda()
+        if torch.cuda.is_available():
+            model.cuda()
         self.model = model
         self.source_vocab = source_vocab
         self.target_vocab = target_vocab
