@@ -14,10 +14,11 @@ from nmtlab.models import EncoderDecoderModel
 class BeamTranslator(BeamSearchKit):
     
     def _encode(self, input_tokens):
-    
+        import pdb;pdb.set_trace()
+        self.model.encode()
     
     def beam_search(self, input_tokens, nbest=False):
-        encoder_outputs = self.encoder_graph.compute([input_tokens])
+        encoder_outputs = self._encode(input_tokens)
         # Beam search for the tokens
         max_steps = 150
         hyps, final_hyps = self.init_hyps(

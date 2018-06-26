@@ -80,8 +80,11 @@ class EncoderDecoderModel(nn.Module):
                 states = states.copy()
                 states[t] = t
                 if sampling:
-                    logits = self.expand(states)
-                    feedback = logits.argmax(-1)
+                    if t == 0:
+                        feedback = context.feedbacks[:, 0].unsqueeze(0)
+                    else:
+                        logits = self.expand(states)
+                        feedback = logits.argmax(-1)
                     states.sampled_token = feedback
                     states.feedback_embed = self.lookup_feedback(feedback.squeeze(0))
                 else:
@@ -133,9 +136,9 @@ class EncoderDecoderModel(nn.Module):
     def compute_loss(self, logits, tgt_seq, tgt_mask):
         B, T, _ = logits.shape
         logits = F.log_softmax(logits, dim=2)
-        flat_logits = logits.reshape(B * T, self._tgt_vocab_size)
-        flat_targets = tgt_seq[:, 1:].reshape(B * T)
-        flat_mask = tgt_mask[:, 1:].reshape(B * T)
+        flat_logits = logits.contiguous().view(B * T, self._tgt_vocab_size)
+        flat_targets = tgt_seq[:, 1:].contiguous().view(B * T)
+        flat_mask = tgt_mask[:, 1:].contiguous().view(B * T)
         loss = nn.NLLLoss(ignore_index=0).forward(flat_logits, flat_targets)
         word_acc = (flat_logits.argmax(1).eq(flat_targets) * flat_mask).sum().float() / flat_mask.sum().float()
         self.monitor("word_acc", word_acc)
@@ -162,3 +165,9 @@ class EncoderDecoderModel(nn.Module):
         loss = self.compute_loss(logits, tgt_seq, tgt_mask)
         self.monitor("loss", loss)
         return self._monitors
+
+    def load(self, path):
+        state_dict = torch.load(path)
+        if "model_state" in state_dict:
+            state_dict = state_dict["model_state"]
+        self.load_state_dict(state_dict)

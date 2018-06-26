@@ -92,28 +92,17 @@ class MTTrainer(object):
     def run(self):
         """Run the training from begining to end.
         """
-        if self._multigpu:
-            import horovod.torch as hvd
         for epoch in xrange(MAX_EPOCH):
             self._scheduler.before_epoch(epoch)
             self._begin_time = time.time()
             self._model.train(True)
             for step, batch in enumerate(self._dataset.train_set()):
                 val_map = self.step(batch)
-                self.check_valid(epoch, step)
+                self.valid(epoch, step)
                 self.print_progress(epoch, step, val_map)
             self._scheduler.after_epoch(epoch)
             # Check if finished
-            is_finished = self._scheduler.is_finished(epoch)
-            if self._multigpu:
-                flag_tensor = torch.tensor(1 if is_finished else 0)
-                flag_tensor = hvd.broadcast(flag_tensor, ROOT_RANK)
-                if flag_tensor > 0:
-                    break
-            elif is_finished:
-                break
-            if self._scheduler.is_finished(epoch):
-                self._shared_finish_flag += 1
+            if self.is_finished(epoch):
                 break
             self._log("nmtlab", "Ending epoch {}, spent {} minutes  ".format(
                 epoch + 1, int((time.time() - self._begin_time) / 60.)
@@ -132,7 +121,7 @@ class MTTrainer(object):
         self._optimizer.step()
         return val_map
         
-    def check_valid(self, epoch, step):
+    def valid(self, epoch, step):
         """Validate the model every few steps.
         """
         if step % self._valid_freq == 0 and self._is_root_node():
@@ -164,12 +153,13 @@ class MTTrainer(object):
             with torch.no_grad():
                 val_map = self._model(src_seq, tgt_seq, sampling=True)
                 # Estimate BLEU
-                if "sampled_tokens" in val_map:
+                if "sampled_tokens" in val_map and val_map["sampled_tokens"] is not None:
                     bleu = self._compute_bleu(val_map["sampled_tokens"], tgt_seq)
                     score_map["bleu"].append(- bleu)
                     del val_map["sampled_tokens"]
                 for k, v in val_map.items():
-                    score_map[k].append(v)
+                    if v is not None:
+                        score_map[k].append(v)
         for key, vals in score_map.items():
             score_map[key] = np.mean(vals)
         return score_map
@@ -212,6 +202,16 @@ class MTTrainer(object):
         state_dict = torch.load(self._save_path)
         self._model.load_state_dict(state_dict["model_state"])
         self._optimizer.load_state_dict(state_dict["optimizer_state"])
+    
+    def is_finished(self, epoch):
+        is_finished = self._scheduler.is_finished(epoch)
+        if self._multigpu:
+            import horovod.torch as hvd
+            flag_tensor = torch.tensor(1 if is_finished else 0)
+            flag_tensor = hvd.broadcast(flag_tensor, ROOT_RANK)
+            return flag_tensor > 0
+        else:
+            return is_finished
         
     def get_learning_rate(self):
         return self._optimizer.param_groups[0]["lr"]
@@ -245,9 +245,16 @@ class MTTrainer(object):
         tgt_mask = np.greater(tgt_seq,  0)
         for i in xrange(tgt_seq.shape[0]):
             target_len = int(tgt_mask[i].sum())
-            ref_tokens = tgt_seq[i, :target_len]
-            out_tokens = sampled_tokens[i, :target_len]
-            bleus.append(smoothed_bleu(out_tokens, ref_tokens))
+            ref_tokens = tgt_seq[i, 1:target_len - 1]
+            out_tokens = list(sampled_tokens[i])
+            if 2 in out_tokens:
+                out_tokens = out_tokens[:out_tokens.index(2)]
+            else:
+                out_tokens = out_tokens[:target_len - 2]
+            if not out_tokens:
+                bleus.append(0.)
+            else:
+                bleus.append(smoothed_bleu(out_tokens, ref_tokens))
         return np.mean(bleus)
     
     @staticmethod

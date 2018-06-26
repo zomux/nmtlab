@@ -19,6 +19,7 @@ class BeamSearchKit(object):
     
     def __init__(self, model, source_vocab, target_vocab, start_token="<s>", end_token="</s>", beam_size=5, opts=None):
         assert isinstance(model, EncoderDecoderModel)
+        model.cuda()
         self.model = model
         self.source_vocab = source_vocab
         self.target_vocab = target_vocab
