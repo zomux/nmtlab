@@ -90,24 +90,26 @@ class BeamSearchKit(object):
         """
         return new_hyp
     
-    def expand_hyps(self, hyps, batch_new_states, batch_scores, sort=True, expand_num=None):
+    def expand_hyps(self, hyps, new_states, batch_scores, sort=True, expand_num=None):
         """
         Create B x B new hypotheses
         """
         if not expand_num:
             expand_num = self.beam_size
         new_hyps = []
+        best_scores, best_tokens = batch_scores.topk(expand_num)
         for i, hyp in enumerate(hyps):
-            new_state = batch_new_states[i]
-            logprob = batch_scores[i] + hyp["logp"]
-            best_indices = sorted(
-                np.argpartition(logprob, expand_num)[:expand_num], key=lambda x: logprob[x])
-            for idx in best_indices:
+            new_hyp_state = MapDict()
+            for sname in self.model.state_names():
+                new_hyp_state[sname] = new_states[sname][:, i, :].unsqueeze(1)
+            new_scores = best_scores[i].cpu().detach().numpy().tolist()
+            new_tokens = best_tokens[i].cpu().detach().numpy().tolist()
+            for new_token, new_score in zip(new_tokens, new_scores):
                 new_hyp = {
-                    "state": new_state,
-                    "tokens": hyp["tokens"] + [idx],
-                    "logp": logprob[idx],
-                    "last_token_logp": batch_scores[i][idx],
+                    "state": new_hyp_state,
+                    "tokens": hyp["tokens"] + [new_token],
+                    "logp": new_score + hyp["logp"],
+                    "last_token_logp": new_score,
                     "old_state": hyp["state"]
                 }
                 new_hyp = self.fix_new_hyp(i, hyp, new_hyp)
@@ -117,7 +119,7 @@ class BeamSearchKit(object):
                         new_hyp[key] = copy.copy(hyp[key])
                 new_hyps.append(new_hyp)
         if sort:
-            new_hyps.sort(key=lambda h: h["logp"])
+            new_hyps.sort(key=lambda h: h["logp"], reverse=True)
         return new_hyps
     
     def truncate_hyps(self, new_hyps, final_hyps=None):

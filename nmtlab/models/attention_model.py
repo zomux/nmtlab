@@ -51,7 +51,8 @@ class AttentionModel(EncoderDecoderModel):
         attention_logits = (attention_query[:, None, :] * context.keys).sum(dim=2)
         attention_logits -= context.attention_penalty
         attention_weights = F.softmax(attention_logits, dim=1)
-        context_vector = torch.bmm(attention_weights[:, None, :], context.encoder_states).squeeze(1)
+        encoder_states = context.encoder_states.expand([attention_weights.shape[0]] + list(context.encoder_states.shape)[1:])
+        context_vector = torch.bmm(attention_weights[:, None, :], encoder_states).squeeze(1)
         # Decode
         dec_input = torch.cat((context_vector, feedback_embed), 1)
         _, (states.hidden, states.cell) = self.decoder_rnn(dec_input[:, None, :], (states.hidden, states.cell))

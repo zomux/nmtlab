@@ -45,7 +45,7 @@ class BeamTranslator(BeamSearchKit):
                     tokens = hyp["tokens"][1:-1]
                     final_hyps.append({
                         "tokens": tokens,
-                        "logp": hyp["logp"] / len(tokens),
+                        "logp": hyp["logp"] / (len(tokens) + 1),
                         "raw": hyp
                     })
             # Update hyps
@@ -53,8 +53,8 @@ class BeamTranslator(BeamSearchKit):
             if len(final_hyps) == self.beam_size:
                 break
         
-        final_hyps.sort(key=lambda h: h["logp"])
-        
+        final_hyps.sort(key=lambda h: h["logp"], reverse=True)
+
         if not final_hyps:
             return None, None
         
@@ -90,5 +90,5 @@ class BeamTranslator(BeamSearchKit):
 
     def expand(self, states):
         logits = self.model.expand(states).squeeze(0)
-        logp = - F.log_softmax(logits)
+        logp = - F.log_softmax(logits, -1)
         return logp
