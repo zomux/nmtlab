@@ -5,17 +5,19 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-# !/usr/bin/env python
-# -*- coding: utf-8 -*-
+from abc import ABCMeta, abstractmethod
 
-import numpy as np
+import torch
+import torch.nn.functional as F
+
 from nmtlab.models import EncoderDecoderModel
 from nmtlab.utils import MapDict
 import copy
 
-import torch
 
 class BeamSearchKit(object):
+    
+    __metaclass__ = ABCMeta
     
     def __init__(self, model, source_vocab, target_vocab, start_token="<s>", end_token="</s>", beam_size=5, opts=None):
         assert isinstance(model, EncoderDecoderModel)
@@ -33,38 +35,41 @@ class BeamSearchKit(object):
         self.prepare()
     
     def prepare(self):
-        """
-        A prepraration function.
+        """Prepare callback.
+        
+        This function will be execute at the begining of beam search.
         """
     
     def preprocess(self, sentence):
+        """Preprocessing callback.
+        """
         return self.source_vocab.encode(sentence.split())
     
     def postprocess(self, input, raw_result):
+        """Post-processing callback.
+        """
         return self.target_vocab.decode(raw_result)
     
     def translate(self, sentence):
+        """Translate one sentence.
         """
-        Translate one sentence.
-        :return: result, score
-        """
-        
         input_tokens = self.preprocess(sentence)
-        result, score = self.beam_search(input_tokens)
-        # Special case
+        with torch.no_grad():
+            result, score = self.beam_search(input_tokens)
         if result:
             result_words = self.postprocess(sentence, result)
-            if not result_words:
-                result_words.append("EMPTY")
             output_line = " ".join(result_words)
             return output_line, score
         else:
+            # When failed
             return None, None
     
-    def init_hyps(self, encoder_outputs, items=None):
+    def initialize_hyps(self, encoder_outputs, items=None):
+        """Initialize the first hypothesis for beam search.
+        """
         final_hyps = []
-        # hyp: state, tokens, sum of -log
         states = MapDict()
+        # Create initial states
         for name, size in zip(self.model.state_names(), self.model.state_sizes()):
             if "init_{}".format(name) in encoder_outputs:
                 states[name] = encoder_outputs["init_{}".format(name)]
@@ -74,10 +79,11 @@ class BeamSearchKit(object):
                 states[name] = torch.zeros((1, 1, size))
                 if torch.cuda.is_available():
                     states[name] = states[name].cuda()
+        # Create first hypthesis
         first_hyp = {
             "state": states,
             "tokens": [self.start_token_id],
-            "logp": 0.
+            "score": 0.
         }
         if items:
             first_hyp.update(items)
@@ -85,14 +91,12 @@ class BeamSearchKit(object):
         return hyps, final_hyps
     
     def fix_new_hyp(self, i, hyp, new_hyp):
-        """
-        Modify new hyp in the expansion.
+        """Modify a created hypothesis in the expansion.
         """
         return new_hyp
     
     def expand_hyps(self, hyps, new_states, batch_scores, sort=True, expand_num=None):
-        """
-        Create B x B new hypotheses
+        """Create B x B new hypotheses
         """
         if not expand_num:
             expand_num = self.beam_size
@@ -108,8 +112,8 @@ class BeamSearchKit(object):
                 new_hyp = {
                     "state": new_hyp_state,
                     "tokens": hyp["tokens"] + [new_token],
-                    "logp": new_score + hyp["logp"],
-                    "last_token_logp": new_score,
+                    "score": new_score + hyp["score"],
+                    "last_token_score": new_score,
                     "old_state": hyp["state"]
                 }
                 new_hyp = self.fix_new_hyp(i, hyp, new_hyp)
@@ -119,38 +123,79 @@ class BeamSearchKit(object):
                         new_hyp[key] = copy.copy(hyp[key])
                 new_hyps.append(new_hyp)
         if sort:
-            new_hyps.sort(key=lambda h: h["logp"], reverse=True)
+            new_hyps.sort(key=lambda h: h["score"], reverse=True)
         return new_hyps
     
-    def truncate_hyps(self, new_hyps, final_hyps=None):
+    def collect_finished_hyps(self, new_hyps, final_hyps=None):
         """
         Collect finished hyps and truncate.
         """
         # Get final hyps
-        if final_hyps is not None:
-            for i in range(len(new_hyps)):
-                hyp = new_hyps[i]
-                if hyp["tokens"][-1] == self.end_token_id:
-                    tokens = hyp["tokens"][1:-1]
-                    final_hyps.append({
-                        "tokens": tokens,
-                        "logp": hyp["logp"] / len(tokens),
-                        "raw": hyp
-                    })
-        # Update hyps
-        hyps = [h for h in new_hyps if h["tokens"][-1] != self.end_token_id][:self.beam_size]
+        for i in range(len(new_hyps)):
+            hyp = new_hyps[i]
+            if hyp["tokens"][-1] == self.end_token_id:
+                # This hypothesis is finished, remove <s> and </s>
+                tokens = hyp["tokens"][1:-1]
+                final_hyps.append({
+                    "tokens": tokens,
+                    "score": hyp["score"] / (len(tokens) + 1),
+                    "raw": hyp
+                })
+        # Remove finished hypotheses
+        hyps = [
+            h for h in new_hyps
+            if h["tokens"][-1] != self.end_token_id][:self.beam_size - len(final_hyps)]
         return hyps, final_hyps
     
-    def update_hyps(self, hyps, final_hyps, batch_new_states, batch_scores):
+    def get_new_hyps(self, hyps, final_hyps, batch_new_states, batch_scores):
+        """Expand hypothesis to get new hypotheses.
+        
+        Returns:
+            New hypotheses and finished hypotheses.
         """
-        Expand and Truncate hypotheses.
-        """
-        new_hyps = self.expand_hyps(hyps, batch_new_states, batch_scores)
-        hyps, final_hyps = self.truncate_hyps(new_hyps, final_hyps)
+        new_hyps = self.expand_hyps(
+            hyps, batch_new_states, batch_scores, expand_num=self.beam_size)
+        new_hyps = new_hyps[:self.beam_size]
+        hyps, final_hyps = self.collect_finished_hyps(new_hyps, final_hyps)
         return hyps, final_hyps
+
+    def combine_states(self, hyps):
+        """Batch all states in different hyptheses.
+        """
+        states = MapDict()
+        # Combine states
+        for name in self.model.state_names():
+            states[name] = torch.cat([h["state"][name] for h in hyps], 1)
+        # Combine last tokens
+        last_tokens = torch.tensor([h["tokens"][-1] for h in hyps])
+        if torch.cuda.is_available():
+            last_tokens = last_tokens.cuda()
+            states.feedback_embed = self.model.lookup_feedback(last_tokens)
+        return states
+
+    def encode(self, input_tokens):
+        """Run the encoder to get context.
+        """
+        input_tensor = torch.tensor([input_tokens])
+        if torch.cuda.is_available():
+            input_tensor = input_tensor.cuda()
+        input_mask = torch.gt(input_tensor, 0)
+        encoder_outputs = self.model.encode(input_tensor, input_mask)
+        return MapDict(encoder_outputs)
+
+    def decode_step(self, context, states):
+        """Run one-step in decoder.
+        """
+        return self.model.decode_step(context, states)
+
+    def expand(self, states):
+        """Expand the decoder states to get log probabilities.
+        """
+        logits = self.model.expand(states).squeeze(0)
+        logp = F.log_softmax(logits, -1)
+        return logp
     
+    @abstractmethod
     def beam_search(self, input_tokens):
-        raise NotImplementedError
-        return None, None
-
-
+        """An abstract beam search method to be implement.
+        """

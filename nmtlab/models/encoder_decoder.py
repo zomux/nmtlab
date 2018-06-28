@@ -42,6 +42,12 @@ class EncoderDecoderModel(nn.Module):
         self._monitors = {}
         self._layers = []
         self.prepare()
+    
+    def set_states(self, state_names, state_sizes):
+        """Set state names and sizes for the decoder.
+        """
+        self._state_names = state_names
+        self._state_sizes = state_sizes
         
     def set_autoregressive(self, flag=True):
         """Set whether the model is autoregressive when training.

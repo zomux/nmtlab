@@ -16,14 +16,14 @@ class Scheduler(object):
         self._binded = True
         self._trainer = trainer
         
-    def before_epoch(self, epoch):
+    def before_epoch(self):
         pass
     
-    def after_epoch(self, epoch):
+    def after_epoch(self):
         pass
     
-    def after_valid(self, epoch, step, is_improved, score_map):
+    def after_valid(self, is_improved, score_map):
         pass
     
-    def is_finished(self, epoch):
+    def is_finished(self):
         pass

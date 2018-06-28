@@ -16,5 +16,5 @@ class SimpleScheduler(Scheduler):
         super(SimpleScheduler, self).__init__()
         self._max_epoch = max_epoch
     
-    def is_finished(self, epoch):
-        return epoch >= self._max_epoch - 1
+    def is_finished(self):
+        return self._trainer.epoch() >= self._max_epoch - 1

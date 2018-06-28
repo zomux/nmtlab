@@ -7,6 +7,7 @@ from __future__ import print_function
 
 from nmtlab.schedulers.base import Scheduler
 
+
 class AnnealScheduler(Scheduler):
     """Scheduler for annealing learning rate.
     """
@@ -20,7 +21,7 @@ class AnnealScheduler(Scheduler):
         self._anneal_factor = anneal_factor
         self._finished = False
         
-    def after_valid(self, epoch, step, is_improved, score_map):
+    def after_valid(self, is_improved, score_map):
         if not is_improved:
             self._fail_count += 1
         else:
@@ -34,5 +35,5 @@ class AnnealScheduler(Scheduler):
                 self._fail_count = 0
                 self._anneal_count += 1
     
-    def is_finished(self, epoch):
+    def is_finished(self):
         return self._finished
