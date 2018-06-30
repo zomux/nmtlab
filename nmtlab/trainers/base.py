@@ -115,7 +115,7 @@ class TrainerKit(object):
     def valid(self):
         """Validate the model every few steps.
         """
-        if self._current_step % self._valid_freq == 0 and self._is_root_node():
+        if (self._current_step + 1) % self._valid_freq == 0 and self._is_root_node():
             self._model.train(False)
             score_map = self.run_valid()
             is_improved = self.check_improvement(score_map)
@@ -126,7 +126,7 @@ class TrainerKit(object):
                 self._current_epoch + 1, self._current_step + 1
             ))
         # Check new trainer settings
-        if self._current_step % self._valid_freq == 0 and self._multigpu:
+        if (self._current_step + 1) % self._valid_freq == 0 and self._multigpu:
             import horovod.torch as hvd
             lr = torch.tensor(self.get_learning_rate())
             lr = hvd.broadcast(lr, ROOT_RANK)

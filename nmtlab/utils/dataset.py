@@ -14,10 +14,10 @@ class MTDataset(object):
     """Bilingual dataset.
     """
     
-    def __init__(self, corpus_path, src_vocab_path, tgt_vocab_path, batch_size=64, max_length=60, n_valid_batch=50):
+    def __init__(self, corpus_path, src_vocab_path, tgt_vocab_path, batch_size=64, max_length=60, n_valid_samples=1000):
         self._max_length = max_length
         self._batch_size = batch_size
-        self._n_valid_batch = n_valid_batch
+        self._n_valid_samples = n_valid_samples
         
         src = torchtext.data.Field(pad_token="<null>", preprocessing=lambda seq: ["<s>"] + seq + ["</s>"])
         self._src_vocab = src.vocab = Vocab(src_vocab_path)
@@ -31,7 +31,6 @@ class MTDataset(object):
         )
         # Create training and valid dataset
         examples = self._data.examples
-        n_valid_samples = self._batch_size * n_valid_batch
         n_train_samples = len(examples) - n_valid_samples
         n_train_samples = int(n_train_samples / self._batch_size) * self._batch_size
         np.random.RandomState(3).shuffle(examples)
