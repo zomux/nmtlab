@@ -25,13 +25,13 @@ class AttentionModel(EncoderDecoderModel):
         self.src_embed_layer = nn.Embedding(self._src_vocab_size, self._embed_size)
         self.tgt_embed_layer = nn.Embedding(self._tgt_vocab_size, self._embed_size)
         self.encoder_rnn = nn.LSTM(self._embed_size, self._hidden_size, batch_first=True, bidirectional=True)
-        self.decoder_rnn = nn.LSTM(self._hidden_size* 2 + self._embed_size, self._hidden_size, batch_first=True)
+        self.decoder_rnn = nn.LSTM(self._hidden_size * 2 + self._embed_size, self._hidden_size, batch_first=True)
         self.init_hidden_nn = nn.Linear(self._hidden_size, self._hidden_size)
         self.attention_key_nn = nn.Linear(self._hidden_size * 2, self._hidden_size)
         self.attention = KeyValAttention()
         self.expander_nn = nn.Sequential(
-            nn.Linear(self._hidden_size, int(self._hidden_size / 2)),
-            nn.Linear(int(self._hidden_size / 2), self._tgt_vocab_size))
+            nn.Linear(self._hidden_size, 600),
+            nn.Linear(600, self._tgt_vocab_size))
 
     def encode(self, src_seq, src_mask=None):
         src_embed = self.src_embed_layer(src_seq)

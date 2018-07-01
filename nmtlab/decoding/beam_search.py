@@ -53,6 +53,7 @@ class BeamSearchKit(object):
     def translate(self, sentence):
         """Translate one sentence.
         """
+        self.model.train(False)
         input_tokens = self.preprocess(sentence)
         with torch.no_grad():
             result, score = self.beam_search(input_tokens)

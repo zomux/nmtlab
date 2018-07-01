@@ -14,6 +14,7 @@ from abc import abstractmethod, ABCMeta
 import numpy as np
 import torch
 from torch.optim.optimizer import Optimizer
+from torch.autograd import Variable
 
 from nmtlab.models import EncoderDecoderModel
 from nmtlab.utils import MTDataset, smoothed_bleu
@@ -101,8 +102,8 @@ class TrainerKit(object):
     def train(self, batch):
         """Run one forward and backward step with given batch.
         """
-        src_seq = batch.src.transpose(0, 1)
-        tgt_seq = batch.tgt.transpose(0, 1)
+        src_seq = Variable(batch.src.transpose(0, 1))
+        tgt_seq = Variable(batch.tgt.transpose(0, 1))
         val_map = self._model(src_seq, tgt_seq)
         self._optimizer.zero_grad()
         val_map["loss"].backward()

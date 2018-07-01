@@ -8,3 +8,4 @@ from .lazydict import LazyDict
 from .vocab import Vocab
 from .dataset import MTDataset
 from .bleu import bleu, smoothed_bleu
+from .opts import OPTS

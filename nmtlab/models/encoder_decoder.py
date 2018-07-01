@@ -78,6 +78,7 @@ class EncoderDecoderModel(nn.Module):
         """Decode the output states.
         """
         if not self._autoregressive and not sampling:
+            states.feedback_embed = self.lookup_feedback(context.feedback)
             return self.decode_step(context, states, full_sequence=True)
         else:
             T = context.feedbacks.shape[1]
@@ -125,7 +126,7 @@ class EncoderDecoderModel(nn.Module):
                     states[state_name] = states[state_name].unsqueeze(0)
                 del context["init_{}".format(state_name)]
             else:
-                states[state_name] = Variable(torch.zeros((1, B, self._hidden_size))).cuda()
+                states[state_name] = Variable(torch.zeros((1, B, size))).cuda()
         if extra_states is not None:
             extra_states.update(extra_states)
         # Process mask
@@ -145,7 +146,8 @@ class EncoderDecoderModel(nn.Module):
         flat_logits = logits.contiguous().view(B * T, self._tgt_vocab_size)
         flat_targets = tgt_seq[:, 1:].contiguous().view(B * T)
         flat_mask = tgt_mask[:, 1:].contiguous().view(B * T)
-        loss = nn.NLLLoss(ignore_index=0).forward(flat_logits, flat_targets)
+        loss = nn.NLLLoss(ignore_index=0, reduce=False).forward(flat_logits, flat_targets)
+        loss = (loss.view(B, T).sum(1) / (tgt_mask.sum(1) - 1).float()).mean()
         word_acc = (flat_logits.argmax(1).eq(flat_targets) * flat_mask).sum().float() / flat_mask.sum().float()
         self.monitor("word_acc", word_acc)
         return loss

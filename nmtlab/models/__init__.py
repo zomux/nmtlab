@@ -3,4 +3,4 @@
 
 from .encoder_decoder import EncoderDecoderModel
 from .attention_model import AttentionModel
-
+from .deep_lstm import DeepLSTMModel
