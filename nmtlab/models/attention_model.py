@@ -25,7 +25,8 @@ class AttentionModel(EncoderDecoderModel):
         self.src_embed_layer = nn.Embedding(self._src_vocab_size, self._embed_size)
         self.tgt_embed_layer = nn.Embedding(self._tgt_vocab_size, self._embed_size)
         self.encoder_rnn = nn.LSTM(self._embed_size, self._hidden_size, batch_first=True, bidirectional=True)
-        self.decoder_rnn = nn.LSTM(self._hidden_size * 2 + self._embed_size, self._hidden_size, batch_first=True)
+        # self.decoder_rnn = nn.LSTM(self._hidden_size * 2 + self._embed_size, self._hidden_size, batch_first=True)
+        self.decoder_rnn = nn.LSTMCell(self._hidden_size * 2 + self._embed_size, self._hidden_size)
         self.init_hidden_nn = nn.Linear(self._hidden_size, self._hidden_size)
         self.attention_key_nn = nn.Linear(self._hidden_size * 2, self._hidden_size)
         self.attention = KeyValAttention()
@@ -37,7 +38,7 @@ class AttentionModel(EncoderDecoderModel):
         src_embed = self.src_embed_layer(src_seq)
         encoder_states, (encoder_last_states, _) = self.encoder_rnn(src_embed)  # - B x N x s
         attention_keys = self.attention_key_nn(encoder_states)
-        dec_init_hidden = self.init_hidden_nn(encoder_last_states[1])
+        dec_init_hidden = F.tanh(self.init_hidden_nn(encoder_last_states[1]))
         encoder_outputs = {
             "encoder_states": encoder_states,
             "keys": attention_keys,
@@ -59,7 +60,9 @@ class AttentionModel(EncoderDecoderModel):
             mask=context.src_mask)
         # Decode
         dec_input = torch.cat((context_vector, feedback_embed), 1)
-        _, (states.hidden, states.cell) = self.decoder_rnn(dec_input[:, None, :], (states.hidden, states.cell))
+        states.hidden, states.cell = self.decoder_rnn(dec_input, (states.hidden[0], states.cell[0]))
+        states.hidden = states.hidden.unsqueeze(0)
+        states.cell= states.cell.unsqueeze(0)
         return states
 
     def expand(self, decoder_outputs):

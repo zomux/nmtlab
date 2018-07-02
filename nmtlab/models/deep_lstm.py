@@ -47,8 +47,8 @@ class DeepLSTMModel(EncoderDecoderModel):
         encoder_states, (encoder_last_states, _) = self.encoder_rnn(src_embed)  # - B x N x s
         encoder_states = self.dropout(encoder_states)
         attention_keys = self.attention_key_nn(encoder_states)
-        dec_init_hidden_1 = self.init_hidden_nn_1(encoder_last_states[1])
-        dec_init_hidden_2 = self.init_hidden_nn_2(encoder_last_states[1])
+        dec_init_hidden_1 = F.tanh(self.init_hidden_nn_1(encoder_last_states[1]))
+        dec_init_hidden_2 = F.tanh(self.init_hidden_nn_2(encoder_last_states[1]))
         encoder_outputs = {
             "encoder_states": encoder_states,
             "keys": attention_keys,

@@ -8,6 +8,7 @@ from __future__ import print_function
 from nmtlab.evaluation.base import EvaluationKit
 from nmtlab.utils import bleu
 
+
 class TokenizedBLEUEvaluator(EvaluationKit):
     """Evaluate tokenized BLEU."""
     

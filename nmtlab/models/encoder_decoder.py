@@ -148,7 +148,8 @@ class EncoderDecoderModel(nn.Module):
         flat_mask = tgt_mask[:, 1:].contiguous().view(B * T)
         loss = nn.NLLLoss(ignore_index=0, reduce=False).forward(flat_logits, flat_targets)
         loss = (loss.view(B, T).sum(1) / (tgt_mask.sum(1) - 1).float()).mean()
-        word_acc = (flat_logits.argmax(1).eq(flat_targets) * flat_mask).sum().float() / flat_mask.sum().float()
+        word_acc = (flat_logits.argmax(1).eq(flat_targets) * flat_mask).view(B, T).sum(1).float() / tgt_mask[:, 1:].sum(1).float()
+        word_acc = word_acc.mean()
         self.monitor("word_acc", word_acc)
         return loss
     

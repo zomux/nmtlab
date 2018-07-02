@@ -107,6 +107,7 @@ class TrainerKit(object):
         val_map = self._model(src_seq, tgt_seq)
         self._optimizer.zero_grad()
         val_map["loss"].backward()
+        # self._clip_grad_norm()
         if self._clip_norm > 0:
             torch.nn.utils.clip_grad_norm_(self._model.parameters(), self._clip_norm)
         self._optimizer.step()
@@ -134,6 +135,10 @@ class TrainerKit(object):
             new_lr = float(lr.numpy())
             if new_lr != self.get_learning_rate():
                 self.set_learning_rate(new_lr)
+            # print(hvd.local_rank(), self._model.attention_key_nn.weight[0, -10:])
+        if (self._current_step + 1) % 30 == 0 and self._multigpu:
+            import horovod.torch as hvd
+            hvd.broadcast_parameters(self._model.state_dict(), root_rank=ROOT_RANK)
     
     def run_valid(self):
         """Run the model on the validation set and report loss.
@@ -260,7 +265,19 @@ class TrainerKit(object):
         ]
         valid_hash = hashlib.sha1("\n".join(valid_list).encode("utf-8", "ignore")).hexdigest()[-8:]
         self.log("nmtlab", "Hash of validation data is {}".format(valid_hash))
-    
+
+    def _clip_grad_norm(self):
+        """Clips gradient norm of parameters.
+        """
+        if self._clip_norm <= 0:
+            return
+        parameters = list(filter(lambda p: p.grad is not None, self._model.parameters()))
+        max_norm = float(self._clip_norm)
+        for param in parameters:
+            grad_norm = param.grad.data.norm(2)
+            if grad_norm > max_norm:
+                param.grad.data.mul_(max_norm / (grad_norm + 1e-6))
+            
     @staticmethod
     def _compute_bleu(sampled_tokens, tgt_seq):
         """Compute smoothed BLEU of sampled tokens
