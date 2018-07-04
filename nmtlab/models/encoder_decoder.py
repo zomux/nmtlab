@@ -9,6 +9,7 @@ from six.moves import zip
 
 from abc import abstractmethod, ABCMeta
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -42,6 +43,36 @@ class EncoderDecoderModel(nn.Module):
         self._monitors = {}
         self._layers = []
         self.prepare()
+        self.initialize_parameters()
+    
+    def initialize_parameters(self):
+        """Initialize the parameters in the model."""
+        # Initialize bias
+        for mod in self.modules():
+            if isinstance(mod, nn.Linear):
+                # Set bias of Linear to zero
+                mod.bias.data.fill_(0)
+            elif isinstance(mod, nn.LSTM):
+                # Set forget bias to 1
+                for attr in dir(mod):
+                    if attr.startswith("bias_hh"):
+                        param = getattr(mod, attr)
+                        if isinstance(param, nn.parameter.Parameter):
+                            n = param.size(0)
+                            start, end = n // 4, n // 2
+                            # param.data.fill_(0.)
+                            param.data[start:end].fill_(1.)
+        # Initialize weights
+        
+        def get_fans(shape):
+            fan_in = shape[0] if len(shape) == 2 else np.prod(shape[1:])
+            fan_out = shape[1] if len(shape) == 2 else shape[0]
+            return fan_in, fan_out
+        for param in self.parameters():
+            shape = param.shape
+            if len(shape) > 1:
+                scale = np.sqrt(6. / sum(get_fans(shape)))
+                param.data.uniform_(- scale, scale)
     
     def set_states(self, state_names, state_sizes):
         """Set state names and sizes for the decoder.

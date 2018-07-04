@@ -40,13 +40,7 @@ class DeepLSTMModel(EncoderDecoderModel):
             nn.Linear(600, self._tgt_vocab_size))
         self.residual_scaler = torch.sqrt(torch.from_numpy(np.array(0.5, dtype="float32")))
         self.set_states(["hidden1", "cell1", "hidden2", "cell2"], [self._hidden_size] * 4)
-
-        def get_fans(shape):
-            fan_in = shape[0] if len(shape) == 2 else np.prod(shape[1:])
-            fan_out = shape[1] if len(shape) == 2 else shape[0]
-            return fan_in, fan_out
-        import pdb;pdb.set_trace()
-    
+        
     def encode(self, src_seq, src_mask=None):
         src_embed = self.src_embed_layer(src_seq)
         src_embed = self.dropout(src_embed)

@@ -17,6 +17,7 @@ class EvaluationKit(object):
     
     def __init__(self, ref_path, ref_field=None, ref_delim="\t"):
         self._ref_lines = []
+        self._ref_path = ref_path
         for ref_line in map(str.strip, open(ref_path)):
             if ref_field is not None:
                 fields = ref_line.split(ref_delim)
