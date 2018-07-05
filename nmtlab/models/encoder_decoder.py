@@ -47,21 +47,22 @@ class EncoderDecoderModel(nn.Module):
     
     def initialize_parameters(self):
         """Initialize the parameters in the model."""
+        import pdb;pdb.set_trace()
         # Initialize bias
-        for mod in self.modules():
-            if isinstance(mod, nn.Linear):
-                # Set bias of Linear to zero
-                mod.bias.data.fill_(0)
-            elif isinstance(mod, nn.LSTM):
-                # Set forget bias to 1
-                for attr in dir(mod):
-                    if attr.startswith("bias_hh"):
-                        param = getattr(mod, attr)
-                        if isinstance(param, nn.parameter.Parameter):
-                            n = param.size(0)
-                            start, end = n // 4, n // 2
-                            # param.data.fill_(0.)
-                            param.data[start:end].fill_(1.)
+        # for mod in self.modules():
+        #     if isinstance(mod, nn.Linear):
+        #         # Set bias of Linear to zero
+        #         mod.bias.data.fill_(0)
+        #     elif isinstance(mod, nn.LSTM):
+        #         # Set forget bias to 1
+        #         for attr in dir(mod):
+        #             if attr.startswith("bias"):
+        #                 param = getattr(mod, attr)
+        #                 if isinstance(param, nn.parameter.Parameter):
+        #                     n = param.size(0)
+        #                     start, end = n // 4, n // 2
+        #                     param.data.fill_(0.)
+        #                     param.data[start:end].fill_(1.)
         # Initialize weights
         
         def get_fans(shape):
