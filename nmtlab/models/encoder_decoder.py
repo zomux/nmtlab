@@ -53,17 +53,16 @@ class EncoderDecoderModel(nn.Module):
         #         # Set bias of Linear to zero
         #         mod.bias.data.fill_(0)
         #     elif isinstance(mod, nn.LSTM):
-                # Set forget bias to 1
-                for attr in dir(mod):
-                    if attr.startswith("bias"):
-                        param = getattr(mod, attr)
-                        if isinstance(param, nn.parameter.Parameter):
-                            n = param.size(0)
-                            start, end = n // 4, n // 2
-                            # param.data.fill_(0.)
-                            param.data[start:end].fill_(1.)
+        #       # Set forget bias to 1
+        #        #for attr in dir(mod):
+        #        #    if attr.startswith("bias"):
+        #        #        param = getattr(mod, attr)
+        #        #        if isinstance(param, nn.parameter.Parameter):
+        #        #            n = param.size(0)
+        #        #            start, end = n // 4, n // 2
+        #                    # param.data.fill_(0.)
+        #        #            param.data[start:end].fill_(1.)
         # Initialize weights
-        
         def get_fans(shape):
             fan_in = shape[0] if len(shape) == 2 else np.prod(shape[1:])
             fan_out = shape[1] if len(shape) == 2 else shape[0]

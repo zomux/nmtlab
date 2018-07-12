@@ -11,6 +11,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from nmtlab.modules import KeyValAttention
 
@@ -44,7 +45,11 @@ class DeepLSTMModel(EncoderDecoderModel):
     def encode(self, src_seq, src_mask=None):
         src_embed = self.src_embed_layer(src_seq)
         src_embed = self.dropout(src_embed)
+        if src_mask is not None:
+            src_embed = pack_padded_sequence(src_embed, lengths=src_mask.sum(1), batch_first=True)
         encoder_states, (encoder_last_states, _) = self.encoder_rnn(src_embed)  # - B x N x s
+        if src_mask is not None:
+            encoder_states, _ = pad_packed_sequence(encoder_states, batch_first=True)
         encoder_states = self.dropout(encoder_states)
         attention_keys = self.attention_key_nn(encoder_states)
         dec_init_hidden_1 = F.tanh(self.init_hidden_nn_1(encoder_last_states[1]))
