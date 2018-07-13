@@ -28,7 +28,7 @@ class GlobalOptions(MapDict):
             if key.startswith("opt_"):
                 self[key.replace("opt_", "")] = getattr(args, key)
                 if getattr(args, key) != arg_parser.get_default(key):
-                    if type(getattr(args, key)) in [str, int]:
+                    if type(getattr(args, key)) in [str, int, float]:
                         tok = "{}-{}".format(key.replace("opt_", ""), getattr(args, key))
                     else:
                         tok = key.replace("opt_", "")

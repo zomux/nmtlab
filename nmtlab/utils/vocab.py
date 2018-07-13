@@ -62,7 +62,7 @@ class Vocab(torchtext.vocab.Vocab):
         pickle.dump(self.itos, open(path, "wb"))
 
     def load(self, path):
-        self.itos = pickle.load(open(path, "rb"), encoding='latin1')
+        self.itos = pickle.load(open(path, "rb"), encoding='utf-8')
         self._build_vocab_map()
 
     def _build_vocab_map(self):
