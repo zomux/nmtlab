@@ -80,8 +80,8 @@ class TrainerKit(object):
         ))
         self.log("nmtlab", "Training data has {} batches".format(self._dataset.n_train_batch()))
         self._report_valid_data_hash()
-        self.log("nmtlab", "Running with {} GPUs".format(
-            hvd.size() if multigpu else 1
+        self.log("nmtlab", "Running with {} GPUs ({})".format(
+            hvd.size() if multigpu else 1, torch.cuda.get_device_name(0)
         ))
     
     def configure(self, save_path=None, clip_norm=5, n_valid_per_epoch=10, criteria="bleu"):
@@ -109,7 +109,10 @@ class TrainerKit(object):
         val_map["loss"].backward()
         # self._clip_grad_norm()
         if self._clip_norm > 0:
-            torch.nn.utils.clip_grad_norm_(self._model.parameters(), self._clip_norm)
+            # print([p.grad.data.norm() for p in self._model.parameters()])
+            # torch.nn.utils.clip_grad_norm_(self._model.parameters(), self._clip_norm)
+            self._clip_grad_norm()
+            # print([p.grad.data.norm() for p in self._model.parameters()])
         self._optimizer.step()
         self.print_progress(val_map)
         return val_map
@@ -163,7 +166,7 @@ class TrainerKit(object):
     
     def check_improvement(self, score_map):
         cri = score_map[self._criteria]
-        if cri < self._best_criteria * 0.999:
+        if cri < self._best_criteria - abs(self._best_criteria) * 0.001:
             self._best_criteria = cri
             self.save(0, 0)
             return True
@@ -195,8 +198,10 @@ class TrainerKit(object):
             torch.save(state_dict, self._save_path)
             open(self._save_path + ".log", "w").writelines([l + "\n" for l in self._log_lines])
     
-    def load(self):
-        state_dict = torch.load(self._save_path)
+    def load(self, model_path=None):
+        if model_path is None:
+            model_path = self._save_path
+        state_dict = torch.load(model_path)
         self._model.load_state_dict(state_dict["model_state"])
         self._optimizer.load_state_dict(state_dict["optimizer_state"])
         self._current_step = state_dict["step"]
@@ -271,10 +276,10 @@ class TrainerKit(object):
         """
         if self._clip_norm <= 0:
             return
-        parameters = list(filter(lambda p: p.grad is not None, self._model.parameters()))
+        parameters = filter(lambda p: p.grad is not None, self._model.parameters())
         max_norm = float(self._clip_norm)
         for param in parameters:
-            grad_norm = param.grad.data.norm(2)
+            grad_norm = param.grad.data.norm()
             if grad_norm > max_norm:
                 param.grad.data.mul_(max_norm / (grad_norm + 1e-6))
             

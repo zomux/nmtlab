@@ -53,7 +53,12 @@ class GlobalOptions(MapDict):
             assert "." in args.result_path
             pieces = args.result_path.rsplit(".", 1)
             self["result_path"] = "{}_{}.{}".format(pieces[0], self.result_tag, pieces[1])
-        print("[OPTS] Model tag:", self.model_tag)
+        try:
+            import horovod as hvd
+            if hvd.local_rank() == 0:
+                print("[OPTS] Model tag:", self.model_tag)
+        except:
+            print("[OPTS] Model tag:", self.model_tag)
         
         
 if "OPTS" not in globals():
