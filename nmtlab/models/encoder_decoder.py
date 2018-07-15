@@ -108,7 +108,7 @@ class EncoderDecoderModel(nn.Module):
         """Decode the output states.
         """
         if not self._autoregressive and not sampling:
-            states.feedback_embed = self.lookup_feedback(context.feedback)
+            states.feedback_embed = self.lookup_feedback(context.feedbacks)
             return self.decode_step(context, states, full_sequence=True)
         else:
             T = context.feedbacks.shape[1]
