@@ -59,7 +59,7 @@ class TrainerKit(object):
             # Set the scope of training data
             self._dataset.set_gpu_scope(hvd.rank(), hvd.size())
             self._n_devices = hvd.size()
-        else:
+        elif torch.cuda.is_available():
             self._model.cuda()
             # Initialize common variables
         self._log_lines = []
@@ -80,8 +80,9 @@ class TrainerKit(object):
         ))
         self.log("nmtlab", "Training data has {} batches".format(self._dataset.n_train_batch()))
         self._report_valid_data_hash()
+        device_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
         self.log("nmtlab", "Running with {} GPUs ({})".format(
-            hvd.size() if multigpu else 1, torch.cuda.get_device_name(0)
+            hvd.size() if multigpu else 1, device_name
         ))
     
     def configure(self, save_path=None, clip_norm=5, n_valid_per_epoch=10, criteria="bleu"):
@@ -237,6 +238,9 @@ class TrainerKit(object):
         """End one epoch.
         """
         self._scheduler.after_epoch()
+        self.log("nmtlab", "Ending epoch {}, spent {} minutes  ".format(
+            self._current_epoch + 1, int(self.epoch_time() / 60.)
+        ))
     
     def begin_step(self, step):
         """Set current step.

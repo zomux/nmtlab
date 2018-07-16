@@ -109,7 +109,8 @@ class EncoderDecoderModel(nn.Module):
         """
         if not self._autoregressive and not sampling:
             states.feedback_embed = self.lookup_feedback(context.feedbacks)
-            return self.decode_step(context, states, full_sequence=True)
+            self.decode_step(context, states, full_sequence=True)
+            return states
         else:
             T = context.feedbacks.shape[1]
             state_stack = []
@@ -126,7 +127,7 @@ class EncoderDecoderModel(nn.Module):
                     states.feedback_embed = self.lookup_feedback(feedback.squeeze(0))
                 else:
                     states.feedback_embed = context.feedback_embeds[:, t]
-                states = self.decode_step(context, states)
+                self.decode_step(context, states)
                 state_stack.append(states)
             return self.combine_states(state_stack)
 
@@ -156,7 +157,9 @@ class EncoderDecoderModel(nn.Module):
                     states[state_name] = states[state_name].unsqueeze(0)
                 del context["init_{}".format(state_name)]
             else:
-                states[state_name] = Variable(torch.zeros((1, B, size))).cuda()
+                states[state_name] = Variable(torch.zeros((1, B, size)))
+                if torch.cuda.is_available():
+                    states[state_name] = states[state_name].cuda()
         if extra_states is not None:
             extra_states.update(extra_states)
         # Process mask
@@ -199,6 +202,7 @@ class EncoderDecoderModel(nn.Module):
         decoder_outputs = self.decode(context, states)
         logits = self.expand(decoder_outputs)
         if sampling:
+            context, states = self.pre_decode(encoder_outputs, tgt_seq, src_mask=src_mask, tgt_mask=tgt_mask)
             sample_outputs = self.decode(context, states, sampling=True)
             self.monitor("sampled_tokens", sample_outputs.sampled_token)
         loss = self.compute_loss(logits, tgt_seq, tgt_mask)

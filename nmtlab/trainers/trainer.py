@@ -27,6 +27,3 @@ class MTTrainer(TrainerKit):
             # Check if finished
             if self.is_finished():
                 break
-            self.log("nmtlab", "Ending epoch {}, spent {} minutes  ".format(
-                epoch + 1, int(self.epoch_time() / 60.)
-            ))

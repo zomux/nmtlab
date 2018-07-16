@@ -187,7 +187,8 @@ class BeamSearchKit(object):
     def decode_step(self, context, states):
         """Run one-step in decoder.
         """
-        return self.model.decode_step(context, states)
+        self.model.decode_step(context, states)
+        return states
 
     def expand(self, states):
         """Expand the decoder states to get log probabilities.

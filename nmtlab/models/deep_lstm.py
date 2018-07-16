@@ -83,7 +83,11 @@ class DeepLSTMModel(EncoderDecoderModel):
         return states
     
     def expand(self, decoder_outputs):
-        residual_hidden = self.residual_scaler.cuda() * (decoder_outputs.hidden1 + decoder_outputs.hidden2)
+        residual_hidden = self.residual_scaler * (decoder_outputs.hidden1 + decoder_outputs.hidden2)
         residual_hidden = self.dropout(residual_hidden)
         logits = self.expander_nn(residual_hidden)
         return logits
+
+    def cuda(self, device=None):
+        super(DeepLSTMModel, self).cuda(device)
+        self.residual_scaler = self.residual_scaler.cuda()

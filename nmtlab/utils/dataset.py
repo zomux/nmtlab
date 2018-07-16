@@ -95,3 +95,8 @@ class MTDataset(object):
     
     def batch_size(self):
         return self._batch_size
+    
+    def set_batch_size(self, batch_size):
+        """Change the batch size of the dataset.
+        """
+        self._batch_size = batch_size

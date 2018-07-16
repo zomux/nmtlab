@@ -54,7 +54,8 @@ class GlobalOptions(MapDict):
             pieces = args.result_path.rsplit(".", 1)
             self["result_path"] = "{}_{}.{}".format(pieces[0], self.result_tag, pieces[1])
         try:
-            import horovod as hvd
+            import horovod.torch as hvd
+            hvd.init()
             if hvd.local_rank() == 0:
                 print("[OPTS] Model tag:", self.model_tag)
         except:

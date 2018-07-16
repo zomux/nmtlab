@@ -29,8 +29,8 @@ class FastDeepLSTMModel(EncoderDecoderModel):
         self.src_embed_layer = nn.Embedding(self._src_vocab_size, self._embed_size)
         self.tgt_embed_layer = nn.Embedding(self._tgt_vocab_size, self._embed_size)
         self.encoder_rnn = nn.LSTM(self._embed_size, self._hidden_size, batch_first=True, bidirectional=True)
-        self.decoder_rnn_1 = nn.LSTM(self._embed_size + self._hidden_size * 2, self._hidden_size, batch_first=True)
-        self.decoder_rnn_2 = nn.LSTM(self._hidden_size, self._hidden_size, batch_first=True)
+        self.decoder_rnn_1 = nn.LSTM(self._embed_size, self._hidden_size, batch_first=True)
+        self.decoder_rnn_2 = nn.LSTM(self._hidden_size * 3, self._hidden_size, batch_first=True)
         self.init_hidden_nn_1 = nn.Linear(self._hidden_size, self._hidden_size)
         self.init_hidden_nn_2 = nn.Linear(self._hidden_size, self._hidden_size)
         self.attention_key_nn = nn.Linear(self._hidden_size * 2, self._hidden_size)
@@ -71,25 +71,34 @@ class FastDeepLSTMModel(EncoderDecoderModel):
     
     def decode_step(self, context, states, full_sequence=False):
         if full_sequence:
-            import pdb;pdb.set_trace()
-            
+            feedback_embeds = states.feedback_embed[:, :-1]
+            states.hidden1, _ = self.decoder_rnn_1(feedback_embeds)
+            # Attention
+            query = states.hidden1
+            context_vector, _ = self.attention(
+                query, context.keys, context.encoder_states,
+                mask=context.mask
+            )
+            # Decoder layer 2
+            decoder_input_2 = torch.cat([states.hidden1, context_vector], 2)
+            states.hidden2, _ = self.decoder_rnn_2(decoder_input_2)
         else:
-            raise NotImplementedError
-        feedback_embed = states.feedback_embed
-        last_dec_hidden = states.hidden1.squeeze(0)
-        # Attention
-        attention_query = last_dec_hidden + feedback_embed
-        context_vector, _ = self.attention(
-            attention_query, context.keys, context.encoder_states,
-            mask=context.src_mask)
-        # Decode
-        dec_input = torch.cat((context_vector, feedback_embed), 1)
-        _, (states.hidden1, states.cell1) = self.decoder_rnn_1(dec_input[:, None, :], (states.hidden1, states.cell1))
-        _, (states.hidden2, states.cell2) = self.decoder_rnn_2(states.hidden1.transpose(1, 0), (states.hidden2, states.cell2))
-        return states
+            feedback_embed = states.feedback_embed
+            _, (states.hidden1, states.cell1) = self.decoder_rnn_1(feedback_embed[:, None, :], (states.hidden1, states.cell1))
+            query = states.hidden1.squeeze(0)
+            context_vector, _ = self.attention(
+                query, context.keys, context.encoder_states,
+                mask=context.mask
+            )
+            decoder_input_2 = torch.cat([query, context_vector], 1)
+            _, (states.hidden2, states.cell2) = self.decoder_rnn_2(decoder_input_2[:, None, :], (states.hidden2, states.cell2))
     
     def expand(self, decoder_outputs):
-        residual_hidden = self.residual_scaler.cuda() * (decoder_outputs.hidden1 + decoder_outputs.hidden2)
+        residual_hidden = self.residual_scaler * (decoder_outputs.hidden1 + decoder_outputs.hidden2)
         residual_hidden = self.dropout(residual_hidden)
         logits = self.expander_nn(residual_hidden)
         return logits
+    
+    def cuda(self, device=None):
+        super(FastDeepLSTMModel, self).cuda(device)
+        self.residual_scaler = self.residual_scaler.cuda()
