@@ -3,3 +3,4 @@
 
 from .base import TrainerKit
 from .trainer import MTTrainer
+from .adamsgd import AdamSGD
