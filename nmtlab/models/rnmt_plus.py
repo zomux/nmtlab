@@ -16,21 +16,45 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from nmtlab.modules import KeyValAttention
 
 
-class FastDeepLSTMModel(EncoderDecoderModel):
-    """Deep LSTM model with attention.
+class RNMTPlusModel(EncoderDecoderModel):
+    """RNMT+ Model.
     
-    Encoder: bidirectional LSTM
-    Decoder: two-layer forward LSTM
-    Attention: KeyValue Dot Attention
+    Encoder: Deep bidirectional LSTM
+    Decoder: Deep forward LSTM
+    Attention: Multihead Attention
     Other tricks: dropout, residual connection
     """
+
+    def __init__(self, num_encoders=1, num_decoders=2,
+                 hidden_size=512, embed_size=512,
+                 src_vocab_size=None, tgt_vocab_size=None,
+                 dataset=None,
+                 state_names=None, state_sizes=None):
+        """Create a RNMT+ Model.
+        Args:
+            num_encoders - Number of bidirectional encoders.
+            num_decoders - Number of forward decoders.
+        """
+        self.num_encoders = num_encoders
+        self.num_decoders = num_decoders
+        super(RNMTPlusModel, self).__init__(
+            hidden_size, embed_size, src_vocab_size, tgt_vocab_size, dataset,
+            state_names, state_sizes)
     
     def prepare(self):
         self.src_embed_layer = nn.Embedding(self._src_vocab_size, self._embed_size)
         self.tgt_embed_layer = nn.Embedding(self._tgt_vocab_size, self._embed_size)
-        self.encoder_rnn = nn.LSTM(self._embed_size, self._hidden_size, batch_first=True, bidirectional=True)
-        self.decoder_rnn_1 = nn.LSTM(self._embed_size, self._hidden_size, batch_first=True)
-        self.decoder_rnn_2 = nn.LSTM(self._hidden_size * 3, self._hidden_size, batch_first=True)
+        self.encoder_rnns = []
+        for l in range(self.num_encoders):
+            if l == 0:
+                encoder_lstm = nn.LSTM(self._embed_size, self._hidden_size, batch_first=True, bidirectional=True)
+            else:
+                encoder_lstm = nn.LSTM(self._hidden_size, self._hidden_size, batch_first=True, bidirectional=True)
+            self.encoder_rnns.append(encoder_lstm)
+        self.decoder_rnns = []
+        for l in range(self.num_decoders):
+            decoder_lstm  = nn.LSTM(self._embed_size, self._hidden_size, batch_first=True)
+            self.decoder_rnns.append(decoder_lstm)
         self.init_hidden_nn_1 = nn.Linear(self._hidden_size, self._hidden_size)
         self.init_hidden_nn_2 = nn.Linear(self._hidden_size, self._hidden_size)
         self.attention_key_nn = nn.Linear(self._hidden_size * 2, self._hidden_size)
@@ -100,5 +124,5 @@ class FastDeepLSTMModel(EncoderDecoderModel):
         return logits
     
     def cuda(self, device=None):
-        super(FastDeepLSTMModel, self).cuda(device)
+        super(RNMTPlusModel, self).cuda(device)
         self.residual_scaler = self.residual_scaler.cuda()
