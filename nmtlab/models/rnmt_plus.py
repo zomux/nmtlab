@@ -42,18 +42,25 @@ class RNMTPlusModel(EncoderDecoderModel):
             state_names, state_sizes)
     
     def prepare(self):
+        # Embedding layers
         self.src_embed_layer = nn.Embedding(self._src_vocab_size, self._embed_size)
         self.tgt_embed_layer = nn.Embedding(self._tgt_vocab_size, self._embed_size)
+        # Encoder
         self.encoder_rnns = []
         for l in range(self.num_encoders):
             if l == 0:
                 encoder_lstm = nn.LSTM(self._embed_size, self._hidden_size, batch_first=True, bidirectional=True)
             else:
-                encoder_lstm = nn.LSTM(self._hidden_size, self._hidden_size, batch_first=True, bidirectional=True)
+                encoder_lstm = nn.LSTM(self._hidden_size * 2, self._hidden_size, batch_first=True, bidirectional=True)
             self.encoder_rnns.append(encoder_lstm)
+        self.project_nn = nn.Linear(self._hidden_size * 2, self._hidden_size)
+        # Decoder
         self.decoder_rnns = []
         for l in range(self.num_decoders):
-            decoder_lstm  = nn.LSTM(self._embed_size, self._hidden_size, batch_first=True)
+            if l == 0:
+                decoder_lstm  = nn.LSTM(self._embed_size, self._hidden_size, batch_first=True)
+            else:
+                decoder_lstm  = nn.LSTM(self._embed_size, self._hidden_size, batch_first=True)
             self.decoder_rnns.append(decoder_lstm)
         self.init_hidden_nn_1 = nn.Linear(self._hidden_size, self._hidden_size)
         self.init_hidden_nn_2 = nn.Linear(self._hidden_size, self._hidden_size)
@@ -72,18 +79,25 @@ class RNMTPlusModel(EncoderDecoderModel):
         src_embed = self.dropout(src_embed)
         if src_mask is not None:
             src_embed = pack_padded_sequence(src_embed, lengths=src_mask.sum(1), batch_first=True)
-        encoder_states, (encoder_last_states, _) = self.encoder_rnn(src_embed)  # - B x N x s
+        enc_states = src_embed
+        for l, rnn in self.encoder_rnns:
+            prev_states = enc_states
+            enc_states, (enc_last_hidden, _) = rnn(prev_states)
+            enc_states = self.dropout(enc_states)
+            if l >= 2:
+                enc_states = enc_states + prev_states
         if src_mask is not None:
-            encoder_states, _ = pad_packed_sequence(encoder_states, batch_first=True)
-        encoder_states = self.dropout(encoder_states)
-        attention_keys = self.attention_key_nn(encoder_states)
-        dec_init_hidden_1 = F.tanh(self.init_hidden_nn_1(encoder_last_states[1]))
-        dec_init_hidden_2 = F.tanh(self.init_hidden_nn_2(encoder_last_states[1]))
+            enc_states, _ = pad_packed_sequence(enc_states, batch_first=True)
+        enc_states = self.project_nn(enc_states)
+        # encoder_states = self.dropout(encoder_states)
+        # attention_keys = self.attention_key_nn(encoder_states)
+        # dec_init_hidden_1 = F.tanh(self.init_hidden_nn_1(encoder_last_states[1]))
+        # dec_init_hidden_2 = F.tanh(self.init_hidden_nn_2(encoder_last_states[1]))
         encoder_outputs = {
-            "encoder_states": encoder_states,
-            "keys": attention_keys,
-            "init_hidden1": dec_init_hidden_1,
-            "init_hidden2": dec_init_hidden_2,
+            "encoder_states": enc_states,
+            # "keys": attention_keys,
+            # "init_hidden1": dec_init_hidden_1,
+            # "init_hidden2": dec_init_hidden_2,
             "src_mask": src_mask
         }
         return encoder_outputs
@@ -96,6 +110,12 @@ class RNMTPlusModel(EncoderDecoderModel):
     def decode_step(self, context, states, full_sequence=False):
         if full_sequence:
             feedback_embeds = states.feedback_embed[:, :-1]
+            dec_states = feedback_embeds
+            for l, rnn in self.decoder_rnns:
+                if l == 0:
+                    dec_states = rnn(dec_states)
+                    # Compute attention
+                    
             states.hidden1, _ = self.decoder_rnn_1(feedback_embeds)
             # Attention
             query = states.hidden1

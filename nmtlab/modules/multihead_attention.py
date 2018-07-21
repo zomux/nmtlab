@@ -12,6 +12,19 @@ import torch.nn.functional as F
 
 class MultiHeadAttention(nn.Module):
     
+    def __init__(self, hidden_size=None, additive=False):
+        self._hidden_size = hidden_size
+        self._additive = additive
+        if additive and hidden_size is None:
+            raise Exception("hidden_size can not be None for additive attention.")
+        if additive:
+            self.W_q = nn.Parameter(torch.randn((hidden_size, hidden_size)))
+            self.W_k = nn.Parameter(torch.randn((hidden_size, hidden_size)))
+            self.V_a = nn.Parameter(torch.randn(hidden_size))
+    
+    def compute_logits(self, query, keys):
+        
+    
     def forward_2d(self, query, keys, values, mask=None):
         """Compute attention for 2-dimensional queries (batch x hidden).
         """
