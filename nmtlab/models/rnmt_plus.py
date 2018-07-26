@@ -13,7 +13,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
-from nmtlab.modules import KeyValAttention
+from nmtlab.modules import MultiHeadAttention
 
 
 class RNMTPlusModel(EncoderDecoderModel):
@@ -52,52 +52,49 @@ class RNMTPlusModel(EncoderDecoderModel):
                 encoder_lstm = nn.LSTM(self._embed_size, self._hidden_size, batch_first=True, bidirectional=True)
             else:
                 encoder_lstm = nn.LSTM(self._hidden_size * 2, self._hidden_size, batch_first=True, bidirectional=True)
+            setattr(self, "encoder_rnn{}".format(l + 1), encoder_lstm)
             self.encoder_rnns.append(encoder_lstm)
         self.project_nn = nn.Linear(self._hidden_size * 2, self._hidden_size)
         # Decoder
         self.decoder_rnns = []
         for l in range(self.num_decoders):
             if l == 0:
-                decoder_lstm  = nn.LSTM(self._embed_size, self._hidden_size, batch_first=True)
+                decoder_lstm = nn.LSTM(self._embed_size, self._hidden_size, batch_first=True)
             else:
-                decoder_lstm  = nn.LSTM(self._embed_size, self._hidden_size, batch_first=True)
+                decoder_lstm = nn.LSTM(self._embed_size + self._hidden_size, self._hidden_size, batch_first=True)
+            setattr(self, "decoder_rnn{}".format(l + 1), decoder_lstm)
             self.decoder_rnns.append(decoder_lstm)
-        self.init_hidden_nn_1 = nn.Linear(self._hidden_size, self._hidden_size)
-        self.init_hidden_nn_2 = nn.Linear(self._hidden_size, self._hidden_size)
-        self.attention_key_nn = nn.Linear(self._hidden_size * 2, self._hidden_size)
-        self.attention = KeyValAttention()
+        self.attention = MultiHeadAttention(num_head=4, hidden_size=self._hidden_size, additive=True)
         self.dropout = nn.Dropout(0.2)
         self.expander_nn = nn.Sequential(
-            nn.Linear(self._hidden_size, 600),
+            nn.Linear(self._hidden_size * 2, 600),
             nn.Linear(600, self._tgt_vocab_size))
         self.residual_scaler = torch.sqrt(torch.from_numpy(np.array(0.5, dtype="float32")))
-        self.set_states(["hidden1", "cell1", "hidden2", "cell2"], [self._hidden_size] * 4)
+        state_names = ["context"]
+        for i in range(self.num_decoders):
+            state_names.append("hidden{}".format(i + 1))
+            state_names.append("cell{}".format(i + 1))
+        self.set_states(state_names, [self._hidden_size] * (self.num_decoders * 2 + 1))
         self.set_autoregressive(False)
         
     def encode(self, src_seq, src_mask=None):
         src_embed = self.src_embed_layer(src_seq)
         src_embed = self.dropout(src_embed)
-        if src_mask is not None:
-            src_embed = pack_padded_sequence(src_embed, lengths=src_mask.sum(1), batch_first=True)
         enc_states = src_embed
-        for l, rnn in self.encoder_rnns:
+        for l, rnn in enumerate(self.encoder_rnns):
             prev_states = enc_states
+            if src_mask is not None:
+                prev_states = pack_padded_sequence(prev_states, lengths=src_mask.sum(1), batch_first=True)
             enc_states, (enc_last_hidden, _) = rnn(prev_states)
+            if src_mask is not None:
+                enc_states, _ = pad_packed_sequence(enc_states, batch_first=True)
             enc_states = self.dropout(enc_states)
             if l >= 2:
-                enc_states = enc_states + prev_states
-        if src_mask is not None:
-            enc_states, _ = pad_packed_sequence(enc_states, batch_first=True)
+                enc_states = self.residual_scaler * (enc_states + prev_states)
         enc_states = self.project_nn(enc_states)
-        # encoder_states = self.dropout(encoder_states)
-        # attention_keys = self.attention_key_nn(encoder_states)
-        # dec_init_hidden_1 = F.tanh(self.init_hidden_nn_1(encoder_last_states[1]))
-        # dec_init_hidden_2 = F.tanh(self.init_hidden_nn_2(encoder_last_states[1]))
         encoder_outputs = {
             "encoder_states": enc_states,
-            # "keys": attention_keys,
-            # "init_hidden1": dec_init_hidden_1,
-            # "init_hidden2": dec_init_hidden_2,
+            "keys": enc_states,
             "src_mask": src_mask
         }
         return encoder_outputs
@@ -110,37 +107,41 @@ class RNMTPlusModel(EncoderDecoderModel):
     def decode_step(self, context, states, full_sequence=False):
         if full_sequence:
             feedback_embeds = states.feedback_embed[:, :-1]
-            dec_states = feedback_embeds
-            for l, rnn in self.decoder_rnns:
+            for l, rnn in enumerate(self.decoder_rnns):
                 if l == 0:
-                    dec_states = rnn(dec_states)
-                    # Compute attention
-                    
-            states.hidden1, _ = self.decoder_rnn_1(feedback_embeds)
-            # Attention
-            query = states.hidden1
-            context_vector, _ = self.attention(
-                query, context.keys, context.encoder_states,
-                mask=context.mask
-            )
-            # Decoder layer 2
-            decoder_input_2 = torch.cat([states.hidden1, context_vector], 2)
-            states.hidden2, _ = self.decoder_rnn_2(decoder_input_2)
+                    states.hidden1, _ = rnn(feedback_embeds)
+                    # Attention
+                    states.context, _ = self.attention(states.hidden1, context.keys, context.encoder_states, mask=context.src_mask)
+                else:
+                    prev_states = getattr(states, "hidden{}".format(l))
+                    dec_input = torch.cat([prev_states, states.context], 2)
+                    dec_states, _ = rnn(dec_input)
+                    dec_states = self.dropout(dec_states)
+                    if l >= 2:
+                        dec_states = self.residual_scaler * (dec_states + prev_states)
+                    setattr(states, "hidden{}".format(l + 1), dec_states)
         else:
             feedback_embed = states.feedback_embed
-            _, (states.hidden1, states.cell1) = self.decoder_rnn_1(feedback_embed[:, None, :], (states.hidden1, states.cell1))
-            query = states.hidden1.squeeze(0)
-            context_vector, _ = self.attention(
-                query, context.keys, context.encoder_states,
-                mask=context.mask
-            )
-            decoder_input_2 = torch.cat([query, context_vector], 1)
-            _, (states.hidden2, states.cell2) = self.decoder_rnn_2(decoder_input_2[:, None, :], (states.hidden2, states.cell2))
+            for l, rnn in enumerate(self.decoder_rnns):
+                lstm_state = (getattr(states, "hidden{}".format(l + 1)), getattr(states, "cell{}".format(l + 1)))
+                if l == 0:
+                    _, (states.hidden1, states.cell1) = rnn(feedback_embed[:, None, :], lstm_state)
+                    # Attention
+                    states.context, _ = self.attention(states.hidden1, context.keys, context.encoder_states, mask=context.src_mask)
+                else:
+                    prev_states = getattr(states, "hidden{}".format(l))
+                    dec_input = torch.cat([prev_states, states.context], 1)
+                    _, (hidden, cell) = rnn(dec_input, lstm_state)
+                    dec_states = self.dropout(hidden)
+                    if l >= 2:
+                        dec_states = self.residual_scaler * (dec_states + prev_states)
+                    setattr(states, "hidden{}".format(l + 1), dec_states)
+                    setattr(states, "cell{}".format(l + 1), cell)
     
-    def expand(self, decoder_outputs):
-        residual_hidden = self.residual_scaler * (decoder_outputs.hidden1 + decoder_outputs.hidden2)
-        residual_hidden = self.dropout(residual_hidden)
-        logits = self.expander_nn(residual_hidden)
+    def expand(self, states):
+        last_dec_states = getattr(states, "hidden{}".format(self.num_decoders - 1))
+        softmax_input = torch.cat([last_dec_states, states.context], -1)
+        logits = self.expander_nn(softmax_input)
         return logits
     
     def cuda(self, device=None):

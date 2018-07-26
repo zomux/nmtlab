@@ -108,11 +108,12 @@ class TrainerKit(object):
         val_map = self._model(src_seq, tgt_seq)
         self._optimizer.zero_grad()
         val_map["loss"].backward()
-        # self._clip_grad_norm()
         if self._clip_norm > 0:
             # print([p.grad.data.norm() for p in self._model.parameters()])
-            # torch.nn.utils.clip_grad_norm_(self._model.parameters(), self._clip_norm)
-            self._clip_grad_norm()
+            if self._multigpu:
+                self._optimizer.synchronize()
+            torch.nn.utils.clip_grad_norm_(self._model.parameters(), self._clip_norm)
+            # self._clip_grad_norm()
             # print([p.grad.data.norm() for p in self._model.parameters()])
         self._optimizer.step()
         self.print_progress(val_map)

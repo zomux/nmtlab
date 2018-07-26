@@ -168,7 +168,7 @@ class EncoderDecoderModel(nn.Module):
         return context, states
         
     @abstractmethod
-    def expand(self, decoder_outputs):
+    def expand(self, states):
         """
         Expand decoder outputs to a vocab-size tensor.
         """

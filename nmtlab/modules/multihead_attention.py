@@ -30,26 +30,38 @@ class MultiHeadAttention(nn.Module):
             h_k = torch.matmul(keys, self.W_k)
             if query.dim() == 2:
                 h = h_q[:, None, :] + h_k
+                h = torch.tanh(h)
+                h = h * self.V_a[None, None, :]
+                new_size = list(h.shape[:2]) + [self._num_head, -1]
+                logits = h.view(new_size).sum(-1)
+                logits = logits.permute(0, 2, 1)  # ~ B x head N, enc N
             else:
                 h = h_q[:, :, None, :] + h_k[:, None, :, :]
-            h = torch.tanh(h)
-            h * self.V_a[None, None, None, :]
+                h = torch.tanh(h)
+                h = h * self.V_a[None, None, None, :]
+                new_size = list(h.shape[:3]) + [self._num_head, -1]
+                logits = h.view(new_size).sum(-1)  # ~ B x dec N x enc N x head N
+                logits = logits.permute(0, 3, 1, 2)  # ~ B x head N x dec N x enc N
         else:
             raise NotImplementedError
-        import pdb;pdb.set_trace()
+        return logits
     
     def forward_2d(self, query, keys, values, mask=None):
         """Compute attention for 2-dimensional queries (batch x hidden).
         """
-        logits = (query[:, None, :] * keys).sum(dim=2)
+        logits = self.compute_logits(query, keys)
         if mask is not None:
             penalty = (1 - mask.float()) * 99.
-            logits -= penalty
+            logits -= penalty[:, None, :]
         weights = F.softmax(logits, dim=1)
         if weights.shape[0] != values.shape[0]:
             values = values.expand(
                 [weights.shape[0]] + list(values.shape)[1:])
-        context_vector = torch.bmm(weights[:, None, :], values).squeeze(1)
+        n_batch, n_head, _ = list(weights.shape)
+        _, n_enc, n_hidden = list(values.shape)
+        new_values = values.view(n_batch, n_enc, n_head, -1).permute(0, 2, 1, 3).contiguous().view(n_batch * n_head, n_enc, -1)
+        context_vector = torch.bmm(weights.view(n_batch * n_head, 1, n_enc), new_values).squeeze(1)
+        context_vector = context_vector.view(n_batch, n_head, -1).view(n_batch, -1)
         return context_vector, weights
     
     def forward_3d(self, query, keys, values, mask=None):
@@ -58,9 +70,13 @@ class MultiHeadAttention(nn.Module):
         logits = self.compute_logits(query, keys)
         if mask is not None:
             penalty = (1 - mask.float()) * 99.
-            logits -= penalty[:, None, :]
-        weights = F.softmax(logits, dim=2)
-        context_vector = torch.bmm(weights, values)
+            logits -= penalty[:, None, None, :]
+        weights = F.softmax(logits, dim=-1)
+        n_batch, n_head, n_dec, _ = list(weights.shape)
+        _, n_enc, n_hidden = list(values.shape)
+        new_values = values.view(n_batch, n_enc, n_head, -1).permute(0, 2, 1, 3).contiguous().view(n_batch * n_head, n_enc, -1)
+        context_vector = torch.bmm(weights.view(n_batch * n_head, n_dec, n_enc), new_values)
+        context_vector = context_vector.view(n_batch, n_head, n_dec, -1).permute(0, 2, 1, 3).contiguous().view(n_batch, n_dec, -1)
         return context_vector, weights
     
     def forward(self, query, keys, values, mask=None):
