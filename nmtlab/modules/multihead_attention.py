@@ -34,7 +34,7 @@ class MultiHeadAttention(nn.Module):
                 h = h * self.V_a[None, None, :]
                 new_size = list(h.shape[:2]) + [self._num_head, -1]
                 logits = h.view(new_size).sum(-1)
-                logits = logits.permute(0, 2, 1)  # ~ B x head N, enc N
+                logits = logits.permute(0, 2, 1)  # ~ B x head N x enc N
             else:
                 h = h_q[:, :, None, :] + h_k[:, None, :, :]
                 h = torch.tanh(h)
@@ -53,7 +53,7 @@ class MultiHeadAttention(nn.Module):
         if mask is not None:
             penalty = (1 - mask.float()) * 99.
             logits -= penalty[:, None, :]
-        weights = F.softmax(logits, dim=1)
+        weights = F.softmax(logits, dim=-1)
         if weights.shape[0] != values.shape[0]:
             values = values.expand(
                 [weights.shape[0]] + list(values.shape)[1:])

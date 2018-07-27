@@ -25,13 +25,15 @@ class EncoderDecoderModel(nn.Module):
     def __init__(self, hidden_size=512, embed_size=512,
                  src_vocab_size=None, tgt_vocab_size=None,
                  dataset=None,
-                 state_names=None, state_sizes=None):
+                 state_names=None, state_sizes=None,
+                 label_uncertainty=0):
         super(EncoderDecoderModel, self).__init__()
         if dataset is None and (src_vocab_size is None or tgt_vocab_size is None):
             raise SystemError("src_vocab_size and tgt_vocab_size must be specified.")
         self._hidden_size = hidden_size
         self._embed_size = embed_size
-        self._autoregressive = True
+        self._stepwise_training = True
+        self._label_uncertainty = label_uncertainty
         if dataset is not None:
             self._src_vocab_size, self._tgt_vocab_size = dataset.vocab_sizes()
         else:
@@ -79,10 +81,10 @@ class EncoderDecoderModel(nn.Module):
         self._state_names = state_names
         self._state_sizes = state_sizes
         
-    def set_autoregressive(self, flag=True):
+    def set_stepwise_training(self, flag=True):
         """Set whether the model is autoregressive when training.
         """
-        self._autoregressive = flag
+        self._stepwise_training = flag
 
     @abstractmethod
     def prepare(self):
@@ -107,7 +109,7 @@ class EncoderDecoderModel(nn.Module):
     def decode(self, context, states, sampling=False):
         """Decode the output states.
         """
-        if not self._autoregressive and not sampling:
+        if not self._stepwise_training and not sampling:
             states.feedback_embed = self.lookup_feedback(context.feedbacks)
             self.decode_step(context, states, full_sequence=True)
             return states
@@ -174,6 +176,11 @@ class EncoderDecoderModel(nn.Module):
         """
     
     def compute_loss(self, logits, tgt_seq, tgt_mask):
+        if self._label_uncertainty > 0 and self.training:
+            uniform_seq = tgt_seq.float().uniform_(0, self._tgt_vocab_size)
+            smooth_mask = tgt_seq.float().bernoulli_(self._label_uncertainty)
+            tgt_seq = (1 - smooth_mask) * tgt_seq.float() + smooth_mask * uniform_seq
+            tgt_seq = tgt_seq.long()
         B, T, _ = logits.shape
         logits = F.log_softmax(logits, dim=2)
         flat_logits = logits.contiguous().view(B * T, self._tgt_vocab_size)

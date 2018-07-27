@@ -41,7 +41,7 @@ class FastDeepLSTMModel(EncoderDecoderModel):
             nn.Linear(600, self._tgt_vocab_size))
         self.residual_scaler = torch.sqrt(torch.from_numpy(np.array(0.5, dtype="float32")))
         self.set_states(["hidden1", "cell1", "hidden2", "cell2"], [self._hidden_size] * 4)
-        self.set_autoregressive(False)
+        self.set_stepwise_training(False)
         
     def encode(self, src_seq, src_mask=None):
         src_embed = self.src_embed_layer(src_seq)

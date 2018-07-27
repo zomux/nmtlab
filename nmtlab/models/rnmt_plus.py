@@ -25,11 +25,7 @@ class RNMTPlusModel(EncoderDecoderModel):
     Other tricks: dropout, residual connection
     """
 
-    def __init__(self, num_encoders=1, num_decoders=2,
-                 hidden_size=512, embed_size=512,
-                 src_vocab_size=None, tgt_vocab_size=None,
-                 dataset=None,
-                 state_names=None, state_sizes=None):
+    def __init__(self, num_encoders=1, num_decoders=2, **kwargs):
         """Create a RNMT+ Model.
         Args:
             num_encoders - Number of bidirectional encoders.
@@ -37,9 +33,7 @@ class RNMTPlusModel(EncoderDecoderModel):
         """
         self.num_encoders = num_encoders
         self.num_decoders = num_decoders
-        super(RNMTPlusModel, self).__init__(
-            hidden_size, embed_size, src_vocab_size, tgt_vocab_size, dataset,
-            state_names, state_sizes)
+        super(RNMTPlusModel, self).__init__(**kwargs)
     
     def prepare(self):
         # Embedding layers
@@ -70,12 +64,12 @@ class RNMTPlusModel(EncoderDecoderModel):
             nn.Linear(self._hidden_size * 2, 600),
             nn.Linear(600, self._tgt_vocab_size))
         self.residual_scaler = torch.sqrt(torch.from_numpy(np.array(0.5, dtype="float32")))
-        state_names = ["context"]
+        state_names = ["context", "final_hidden"]
         for i in range(self.num_decoders):
             state_names.append("hidden{}".format(i + 1))
             state_names.append("cell{}".format(i + 1))
-        self.set_states(state_names, [self._hidden_size] * (self.num_decoders * 2 + 1))
-        self.set_autoregressive(False)
+        self.set_states(state_names, [self._hidden_size] * (self.num_decoders * 2 + 2))
+        self.set_stepwise_training(False)
         
     def encode(self, src_seq, src_mask=None):
         src_embed = self.src_embed_layer(src_seq)
@@ -107,39 +101,43 @@ class RNMTPlusModel(EncoderDecoderModel):
     def decode_step(self, context, states, full_sequence=False):
         if full_sequence:
             feedback_embeds = states.feedback_embed[:, :-1]
+            dec_states = None
             for l, rnn in enumerate(self.decoder_rnns):
                 if l == 0:
-                    states.hidden1, _ = rnn(feedback_embeds)
+                    dec_states, _ = rnn(feedback_embeds)
                     # Attention
-                    states.context, _ = self.attention(states.hidden1, context.keys, context.encoder_states, mask=context.src_mask)
+                    states.context, _ = self.attention(dec_states, context.keys, context.encoder_states, mask=context.src_mask)
                 else:
-                    prev_states = getattr(states, "hidden{}".format(l))
+                    prev_states = dec_states
                     dec_input = torch.cat([prev_states, states.context], 2)
                     dec_states, _ = rnn(dec_input)
                     dec_states = self.dropout(dec_states)
                     if l >= 2:
                         dec_states = self.residual_scaler * (dec_states + prev_states)
-                    setattr(states, "hidden{}".format(l + 1), dec_states)
         else:
             feedback_embed = states.feedback_embed
+            dec_states = None
             for l, rnn in enumerate(self.decoder_rnns):
                 lstm_state = (getattr(states, "hidden{}".format(l + 1)), getattr(states, "cell{}".format(l + 1)))
                 if l == 0:
                     _, (states.hidden1, states.cell1) = rnn(feedback_embed[:, None, :], lstm_state)
                     # Attention
-                    states.context, _ = self.attention(states.hidden1, context.keys, context.encoder_states, mask=context.src_mask)
+                    states.context, _ = self.attention(states.hidden1.squeeze(0), context.keys, context.encoder_states, mask=context.src_mask)
+                    states.context = states.context.unsqueeze(0)
+                    dec_states = states.hidden1
                 else:
-                    prev_states = getattr(states, "hidden{}".format(l))
-                    dec_input = torch.cat([prev_states, states.context], 1)
-                    _, (hidden, cell) = rnn(dec_input, lstm_state)
+                    prev_states = dec_states
+                    dec_input = torch.cat([prev_states, states.context], 2)
+                    _, (hidden, cell) = rnn(dec_input.transpose(1, 0), lstm_state)
                     dec_states = self.dropout(hidden)
                     if l >= 2:
                         dec_states = self.residual_scaler * (dec_states + prev_states)
-                    setattr(states, "hidden{}".format(l + 1), dec_states)
-                    setattr(states, "cell{}".format(l + 1), cell)
-    
+                    states["hidden{}".format(l + 1)] = hidden
+                    states["cell{}".format(l + 1)] = cell
+        states["final_hidden"] = dec_states
+
     def expand(self, states):
-        last_dec_states = getattr(states, "hidden{}".format(self.num_decoders - 1))
+        last_dec_states = states.final_hidden
         softmax_input = torch.cat([last_dec_states, states.context], -1)
         logits = self.expander_nn(softmax_input)
         return logits
