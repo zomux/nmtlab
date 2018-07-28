@@ -5,6 +5,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from nmtlab.trainers.base import TrainerKit
+
 
 class Scheduler(object):
     
@@ -13,6 +15,10 @@ class Scheduler(object):
         self._trainer = None
     
     def bind(self, trainer):
+        """Bind the scheduler with a trainer.
+        Args:
+            trainer(TrainerKit) - Trainer.
+        """
         self._binded = True
         self._trainer = trainer
         
@@ -20,6 +26,9 @@ class Scheduler(object):
         pass
     
     def after_epoch(self):
+        pass
+    
+    def before_step(self):
         pass
     
     def after_valid(self, is_improved, score_map):

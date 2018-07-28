@@ -71,6 +71,7 @@ class TrainerKit(object):
         self._begin_time = 0
         self._current_epoch = 0
         self._current_step = 0
+        self._global_step = 0
         # Print information
         self.log("nmtlab", "Training {} with {} parameters".format(
             self._model.__class__.__name__, len(list(self._model.named_parameters()))
@@ -117,6 +118,7 @@ class TrainerKit(object):
             # print([p.grad.data.norm() for p in self._model.parameters()])
         self._optimizer.step()
         self.print_progress(val_map)
+        self._global_step += 1
         return val_map
     
     def valid(self):
@@ -170,7 +172,7 @@ class TrainerKit(object):
         cri = score_map[self._criteria]
         if cri < self._best_criteria - abs(self._best_criteria) * 0.001:
             self._best_criteria = cri
-            self.save(0, 0)
+            self.save()
             return True
         else:
             return False
@@ -189,25 +191,31 @@ class TrainerKit(object):
         if self._is_root_node():
             print(line)
     
-    def save(self, epoch, step):
+    def save(self, path=None):
+        """Save the trainer to the given file path.
+        """
         state_dict = {
-            "epoch": epoch,
-            "step": step,
+            "epoch": self._current_epoch,
+            "step": self._current_step,
+            "global_step": self._global_step,
             "model_state": self._model.state_dict(),
             "optimizer_state": self._optimizer.state_dict()
         }
-        if self._save_path is not None:
+        if path is None:
+            path = self._save_path
+        if path is not None:
             torch.save(state_dict, self._save_path)
             open(self._save_path + ".log", "w").writelines([l + "\n" for l in self._log_lines])
     
-    def load(self, model_path=None):
-        if model_path is None:
-            model_path = self._save_path
-        state_dict = torch.load(model_path)
+    def load(self, path=None):
+        if path is None:
+            path = self._save_path
+        state_dict = torch.load(path)
         self._model.load_state_dict(state_dict["model_state"])
         self._optimizer.load_state_dict(state_dict["optimizer_state"])
         self._current_step = state_dict["step"]
         self._current_epoch = state_dict["epoch"]
+        self._global_step = state_dict["global_step"] if "global_step" in state_dict else 0
     
     def is_finished(self):
         is_finished = self._scheduler.is_finished()
@@ -247,6 +255,7 @@ class TrainerKit(object):
         """Set current step.
         """
         self._current_step = step
+        self._scheduler.before_step()
     
     def epoch(self):
         """Get current epoch.
@@ -254,9 +263,14 @@ class TrainerKit(object):
         return self._current_epoch
     
     def step(self):
-        """Get current step
+        """Get current step.
         """
         return self._current_step
+    
+    def global_step(self):
+        """Get global step.
+        """
+        return self._global_step
     
     def epoch_time(self):
         """Get the seconds consumed in current epoch.

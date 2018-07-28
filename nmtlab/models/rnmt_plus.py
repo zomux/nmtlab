@@ -22,17 +22,20 @@ class RNMTPlusModel(EncoderDecoderModel):
     Encoder: Deep bidirectional LSTM
     Decoder: Deep forward LSTM
     Attention: Multihead Attention
-    Other tricks: dropout, residual connection
+    Other tricks: dropout, residual connection, layer normalization
+    TODO: per gate layer normlaization
     """
 
-    def __init__(self, num_encoders=1, num_decoders=2, **kwargs):
+    def __init__(self, num_encoders=1, num_decoders=2, layer_norm=False, **kwargs):
         """Create a RNMT+ Model.
         Args:
             num_encoders - Number of bidirectional encoders.
             num_decoders - Number of forward decoders.
+            layer_norm - Using normal layer normalization.
         """
         self.num_encoders = num_encoders
         self.num_decoders = num_decoders
+        self.layer_norm = layer_norm
         super(RNMTPlusModel, self).__init__(**kwargs)
     
     def prepare(self):
@@ -85,7 +88,11 @@ class RNMTPlusModel(EncoderDecoderModel):
             enc_states = self.dropout(enc_states)
             if l >= 2:
                 enc_states = self.residual_scaler * (enc_states + prev_states)
+            if self.layer_norm:
+                enc_states = F.layer_norm(enc_states, (self._hidden_size * 2,))
         enc_states = self.project_nn(enc_states)
+        if self.layer_norm:
+            enc_states = F.layer_norm(enc_states, (self._hidden_size,))
         encoder_outputs = {
             "encoder_states": enc_states,
             "keys": enc_states,
@@ -105,6 +112,8 @@ class RNMTPlusModel(EncoderDecoderModel):
             for l, rnn in enumerate(self.decoder_rnns):
                 if l == 0:
                     dec_states, _ = rnn(feedback_embeds)
+                    if self.layer_norm:
+                        dec_states = F.layer_norm(dec_states, (self._hidden_size,))
                     # Attention
                     states.context, _ = self.attention(dec_states, context.keys, context.encoder_states, mask=context.src_mask)
                 else:
@@ -114,6 +123,8 @@ class RNMTPlusModel(EncoderDecoderModel):
                     dec_states = self.dropout(dec_states)
                     if l >= 2:
                         dec_states = self.residual_scaler * (dec_states + prev_states)
+                    if self.layer_norm:
+                        dec_states = F.layer_norm(dec_states, (self._hidden_size,))
         else:
             feedback_embed = states.feedback_embed
             dec_states = None
@@ -121,10 +132,12 @@ class RNMTPlusModel(EncoderDecoderModel):
                 lstm_state = (getattr(states, "hidden{}".format(l + 1)), getattr(states, "cell{}".format(l + 1)))
                 if l == 0:
                     _, (states.hidden1, states.cell1) = rnn(feedback_embed[:, None, :], lstm_state)
-                    # Attention
-                    states.context, _ = self.attention(states.hidden1.squeeze(0), context.keys, context.encoder_states, mask=context.src_mask)
-                    states.context = states.context.unsqueeze(0)
                     dec_states = states.hidden1
+                    if self.layer_norm:
+                        dec_states = F.layer_norm(dec_states, (self._hidden_size,))
+                    # Attention
+                    states.context, _ = self.attention(dec_states.squeeze(0), context.keys, context.encoder_states, mask=context.src_mask)
+                    states.context = states.context.unsqueeze(0)
                 else:
                     prev_states = dec_states
                     dec_input = torch.cat([prev_states, states.context], 2)
@@ -132,6 +145,8 @@ class RNMTPlusModel(EncoderDecoderModel):
                     dec_states = self.dropout(hidden)
                     if l >= 2:
                         dec_states = self.residual_scaler * (dec_states + prev_states)
+                    if self.layer_norm:
+                        dec_states = F.layer_norm(dec_states, (self._hidden_size,))
                     states["hidden{}".format(l + 1)] = hidden
                     states["cell{}".format(l + 1)] = cell
         states["final_hidden"] = dec_states
