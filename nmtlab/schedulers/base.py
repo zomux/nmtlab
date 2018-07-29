@@ -5,8 +5,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from nmtlab.trainers.base import TrainerKit
-
 
 class Scheduler(object):
     

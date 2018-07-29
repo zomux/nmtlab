@@ -132,20 +132,16 @@ class TrainerKit(object):
             self._model.train(True)
             self.log("valid", "{}{} (epoch {}, step {})".format(
                 self._dict_str(score_map), " *" if is_improved else "",
-                self._current_epoch + 1, self._current_step + 1
+                self._current_epoch + 1, self._global_step + 1
             ))
         # Check new trainer settings
         if (self._current_step + 1) % self._valid_freq == 0 and self._multigpu:
             import horovod.torch as hvd
-            lr = torch.tensor(self.get_learning_rate())
+            lr = torch.tensor(self.learning_rate())
             lr = hvd.broadcast(lr, ROOT_RANK)
             new_lr = float(lr.numpy())
-            if new_lr != self.get_learning_rate():
+            if new_lr != self.learning_rate():
                 self.set_learning_rate(new_lr)
-            # print(hvd.local_rank(), self._model.attention_key_nn.weight[0, -10:])
-        if (self._current_step + 1) % 30 == 0 and self._multigpu:
-            import horovod.torch as hvd
-            hvd.broadcast_parameters(self._model.state_dict(), root_rank=ROOT_RANK)
     
     def run_valid(self):
         """Run the model on the validation set and report loss.
@@ -227,7 +223,7 @@ class TrainerKit(object):
         else:
             return is_finished
     
-    def get_learning_rate(self):
+    def learning_rate(self):
         return self._optimizer.param_groups[0]["lr"]
     
     def set_learning_rate(self, lr):
@@ -271,6 +267,11 @@ class TrainerKit(object):
         """Get global step.
         """
         return self._global_step
+    
+    def devices(self):
+        """Get the number of devices (GPUS).
+        """
+        return self._n_devices
     
     def epoch_time(self):
         """Get the seconds consumed in current epoch.
