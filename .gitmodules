@@ -1,0 +1,6 @@
+[submodule "third-party/mosesdecoder"]
+	path = third-party/mosesdecoder
+	url = https://github.com/moses-smt/mosesdecoder
+[submodule "third-party/subword-nmt"]
+	path = third-party/subword-nmt
+	url = https://github.com/rsennrich/subword-nmt
