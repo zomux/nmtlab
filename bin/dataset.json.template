@@ -1,0 +1,10 @@
+{
+    "iwslt14_de": {
+        "train_corpus": "/your/path/train.de-en.bpe20k.tsv",
+        "test_corpus": "/your/path/train.de-en.bpe20k.tsv",
+        "ref_corpus": "/your/path/test.en",
+        "src_vocab_path":  "/your/path/iwslt14.en.bpe20k.vocab",
+        "tgt_vocab_path": "/your/path/iwslt14.en.bpe20k.vocab",
+        "n_valid_per_epoch": 1
+    }
+}
