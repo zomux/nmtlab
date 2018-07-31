@@ -77,6 +77,8 @@ mpirun -np 4 -H localhost:4 -bind-to none -map-by slot -x LD_LIBRARY_PATH -x PAT
 ./bin/run.py -d private/dataset.json -tok iwslt15_vien --opt_gpus 4 --opt_model rnmt_plus --opt_weightdecay --all
 ```
 
+I got a BLEU score of 21.99 in my 4 GPU environment.
+
 # Using nmtlab in Python
 
 nmtlab is designed to be directly used in Python. Here is an example code in `examples/rnmt_experiment.py`.
@@ -183,7 +185,7 @@ if OPTS.test or OPTS.all:
     print(OPTS.result_path)
 ```
 
-Finally, here are the codes for evaluate then BLEU score.
+Finally, here are the codes for evaluate the BLEU score.
 ```python
 # Evaluation phase
 if OPTS.evaluate or OPTS.all:
@@ -201,7 +203,55 @@ python ./examples/rnmt_experiment.py --opt_gpus 4 --all
 
 # Design your NMT model
 
+A customized NMT model can be defined in following structure:
+```python
+from nmtlab.models import EncoderDecoderModel
 
+class ExampleModel(EncoderDecoderModel):
+    
+    def prepare(self):
+        """
+        Initalize layers for the NMT models.
+        """
+        # Set the names of decoder states
+        self.set_states(
+            ["hidden1", "cell1"],
+            [self._hidden_size, self._hidden_size])
+        # Choose whether to run decode the sequence in stepwise fashion in the training time.
+        # This shall be set to False when using Cudnn LSTM API or transformer.
+        # When this flag is False you have to implement the 'decode_step' function for both scenarios.
+        self.set_stepwise_training(False)
+    
+    def encode(self, src_seq, src_mask=None):
+        """
+        Encode the input sequence and output encoder states.
+        """
+    
+    def lookup_feedback(self, feedback):
+        """
+        Return the embeddings for target-side tokens.
+        """
+    
+    def decode_step(self, context, states, full_sequence=False):
+        """
+        Produce decoder states given encoder context.
+        Args:
+            context - encoder states and feedback embeddings
+            states - decoder states in previous step.
+            full_sequence - whether to produce states for one step or for a full sequence
+        """
+        if full_sequence:
+            # Compute the states in full sequence mode.
+        else:
+            # Update the decoder states in every step.
+    
+    def expand(self, states):
+        """
+        Compute the softmax logits given final decoder states.
+        """
+```
+
+Please check `examples/example_model.py` for an example model implementation.
 
 Raphael Shu, 2018.7
 
