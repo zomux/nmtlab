@@ -1,88 +1,13 @@
-# nmtlab - A PyTorch-based Neural Machine Translation research framework for research purpose
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
-This is a framework to allow you to tweak EVERY part of NMT models. It is designed to be simple and clear, yet flexible.
+from __future__ import division
+from __future__ import print_function
 
-# Installation
+import importlib.util
+import sys
+sys.path.append(".")
 
-Create conda environment
-
-```bash
-conda create --name nmtlab python>3.6 --no-default-packages
-conda activate nmtlab
-```
-
-Install pytorch, please check https://pytorch.org,
-
-The command depending on CUDA versions, the default one is:
-
-```bash
-conda install pytorch torchvision -c pytorch
-```
-
-Clone nmtlab repository
-```bash
-git clone --recurse-submodules https://github.com/zomux/nmtlab
-cd nmtlab
-```
-
-Install other prerequisite packages:
-```bash
-pip install -r requirements.txt
-```
-
-(Option) Install horovod for multi-gpu support
-
-Step 1. Install Open MPI
-
-https://www.open-mpi.org/faq/?category=building#easy-build
-
-Step 2. Install horovod through pypi
-```bash
-pip install horovod 
-```
-
-# Tutorial for using nmtlab
-
-In this tutorial, we are going to train a NMT model on IWSLT15 Vietnam-English task, and evaluate it.
-
-Make sure you are in the root directory of nmtlab repository. First, create the directory for experiment and download corpus:
-```bash
-mkdir ./private
-bash scripts/download_iwslt15.sh
-```
-
-Preprocess the corpus 
-(trucasing, subword segmentation and extracting vocabulary):
-```bash
-bash scripts/preprocess_iwslt15.sh
-```
-
-Create dataset configuration
-```bash
-cp examples/dataset.json.example private/dataset.json
-```
-
-Train a RNMT+ model and evaluate it
-```bash
-./bin/run.py -d private/dataset.json -tok iwslt15_vien --opt_gpus 1 --opt_model rnmt_plus --opt_weightdecay --train --test --evaluate
-```
-
-Instead of run the command with `--train --test --evaluate`, you can simply use `--all`.
-
-(Option) Run the experiment with multiple GPUs
-
-Make sure you have installed Open MPI and horovod, then use the following command to run with 4 GPUs:
-```bash
-mpirun -np 4 -H localhost:4 -bind-to none -map-by slot -x LD_LIBRARY_PATH -x PATH \
-./bin/run.py -d private/dataset.json -tok iwslt15_vien --opt_gpus 4 --opt_model rnmt_plus --opt_weightdecay --all
-```
-
-# Using nmtlab in Python
-
-nmtlab is designed to be directly used in Python. Here is an example code in `examples/rnmt_experiment.py`.
-
-First, we import basic packages:
-```python
 from torch import optim
 
 from nmtlab import MTTrainer, MTDataset
@@ -93,11 +18,7 @@ from nmtlab.evaluation.moses_bleu import MosesBLEUEvaluator
 from nmtlab.utils import OPTS
 
 from argparse import ArgumentParser
-```
 
-Next we define the options, note that all options with `opt_` prefix will be appended to the name of model file and result file. Options with "opt_T" prefix are considered as hyperparameter for testing phase, which will be only appended to the filenames of translation results.
-
-```python
 ap = ArgumentParser()
 # Main commands
 ap.add_argument("--train", action="store_true", help="training")
@@ -120,10 +41,7 @@ ap.add_argument("--model_path",
 ap.add_argument("--result_path",
                 default="private/example.result", help="path of translation result")
 OPTS.parse(ap)
-```
 
-Next, we define the dataset.
-```python
 train_corpus = "private/iwslt15_vien/iwslt15_train.truecased.bpe20k.vien"
 test_corpus = "private/iwslt15_vien/iwslt15_tst2013.truecased.bpe20k.vien"
 ref_path = "private/iwslt15_vien/iwslt15_tst2013.truecased.en"
@@ -134,17 +52,12 @@ tgt_vocab_path = "private/iwslt15_vien/iwslt15.truecased.bpe20k.en.vocab"
 dataset = MTDataset(
     train_corpus, src_vocab_path, tgt_vocab_path,
     batch_size=OPTS.batchsz * OPTS.gpus)
-```
 
-Then we create the NMT model.
-```python
+# Define model
 nmt = RNMTPlusModel(
     num_encoders=1, num_decoders=2,
     dataset=dataset, hidden_size=OPTS.hiddensz, embed_size=OPTS.embedsz, label_uncertainty=0.1)
-```
 
-In the training phase, we choose a PyTorch optimizer and training scheduler, and train the model.
-```python
 # Training phase
 if OPTS.train or OPTS.all:
     # Define optimizer and scheduler
@@ -157,11 +70,14 @@ if OPTS.train or OPTS.all:
     if OPTS.resume:
         trainer.load()
     trainer.run()
-```
 
-Next, we translate all the sentences in the test corpus.
-```python
-    
+# Testing and Evaluation phase is only for the master node
+if importlib.util.find_spec("horovod") is not None:
+    import horovod.torch as hvd
+    hvd.init()
+    if hvd.local_rank() != 0:
+        raise SystemExit
+
 # Testing phase
 if OPTS.test or OPTS.all:
     print("[testing]")
@@ -181,27 +97,10 @@ if OPTS.test or OPTS.all:
     fout.close()
     print("[result path]")
     print(OPTS.result_path)
-```
 
-Finally, here are the codes for evaluate then BLEU score.
-```python
 # Evaluation phase
 if OPTS.evaluate or OPTS.all:
     evaluator = MosesBLEUEvaluator(ref_path)
     print("[tokenized BLEU]")
     print(evaluator.evaluate(OPTS.result_path))
-```
-
-Please check and use the full code in `examples/rnmt_experiment.py`. Note that in this example, we are not using per-gate layer normalization and dynamic Adam Scheduling, which may affect the final model performance.
-
-The code can be run with the following command:
-```bash
-python ./examples/rnmt_experiment.py --opt_gpus 4 --all
-```
-
-# Design your NMT model
-
-
-
-Raphael Shu, 2018.7
 

@@ -137,10 +137,6 @@ if OPTS.test or OPTS.all:
 # Evaluation phase
 if OPTS.evaluate or OPTS.all:
     from nmtlab.evaluation.moses_bleu import MosesBLEUEvaluator
-    import horovod.torch as hvd
-    hvd.init()
-    if hvd.local_rank() != 0:
-        raise SystemExit
     evaluator = MosesBLEUEvaluator(ref_path)
     print("[tokenized BLEU]")
     print(evaluator.evaluate(OPTS.result_path))
