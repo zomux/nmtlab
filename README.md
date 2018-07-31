@@ -22,6 +22,7 @@ conda install pytorch torchvision -c pytorch
 Clone nmtlab repository
 ```bash
 git clone --recurse-submodules https://github.com/zomux/nmtlab
+cd nmtlab
 ```
 
 Install other prerequisite packages:
