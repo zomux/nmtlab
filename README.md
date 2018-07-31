@@ -13,7 +13,7 @@ conda activate nmtlab
 
 Install pytorch, please check https://pytorch.org,
 
-The command differs across CUDA versions, the default one is:
+The command depending on CUDA versions, the default one is:
 
 ```bash
 conda install pytorch torchvision -c pytorch
@@ -30,8 +30,26 @@ Install other prerequisite packages:
 pip install -r requirements.txt
 ```
 
+(Option) Install horovod for multi-gpu support
 
-# Tutorial in Python
+Step 1. Install Open MPI
+
+https://www.open-mpi.org/faq/?category=building#easy-build
+
+Step 2. Install horovod through pypi
+```bash
+pip install horovod 
+```
+
+# Tutorial for using nmtlab
+
+In this tutorial, we are going to train a NMT model on IWSLT15 Vietnam-English task, and evaluate it.
+
+Make sure you are in the root directory of nmtlab repository. First, create the directory for experiment and download corpus:
+```bash
+bash scripts/download_iwslt
+```
+
 
 Raphael Shu, 2018.7
 
