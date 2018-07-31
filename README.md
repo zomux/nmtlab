@@ -64,7 +64,7 @@ cp examples/dataset.json.example private/dataset.json
 
 Train a RNMT+ model and evaluate it
 ```bash
-./bin/run.py -d private/dataset.json -tok iwslt15_vien --opt_gpus 1 --opt_model rnmt_plus --opt_weightdecay --train --test --evaluate
+./bin/run.py -d private/dataset.json -t iwslt15_vien --opt_gpus 1 --opt_model rnmt_plus --opt_weightdecay --train --test --evaluate
 ```
 
 Instead of run the command with `--train --test --evaluate`, you can simply use `--all`.
@@ -74,7 +74,7 @@ Instead of run the command with `--train --test --evaluate`, you can simply use 
 Make sure you have installed Open MPI and horovod, then use the following command to run with 4 GPUs:
 ```bash
 mpirun -np 4 -H localhost:4 -bind-to none -map-by slot -x LD_LIBRARY_PATH -x PATH \
-./bin/run.py -d private/dataset.json -tok iwslt15_vien --opt_gpus 4 --opt_model rnmt_plus --opt_weightdecay --all
+./bin/run.py -d private/dataset.json -t iwslt15_vien --opt_gpus 4 --opt_model rnmt_plus --opt_weightdecay --all
 ```
 
 I got a BLEU score of 21.99 in my 4 GPU environment.
@@ -222,7 +222,7 @@ class ExampleModel(EncoderDecoderModel):
         self.set_states(
             ["hidden1", "cell1"],
             [self._hidden_size, self._hidden_size])
-        # Choose whether to run decode the sequence in stepwise fashion in the training time.
+        # Choose whether to decode the sequence in stepwise fashion in the training time.
         # This shall be set to False when using Cudnn LSTM API or transformer.
         # When this flag is False you have to implement the 'decode_step' function for both scenarios.
         self.set_stepwise_training(False)
