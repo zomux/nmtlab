@@ -1,4 +1,4 @@
-nmtlab - A PyTorch-based research framework for Neural Machine Translation
+# nmtlab - A PyTorch-based framework for Neural Machine Translation research
 
 This is a framework to allow you to tweak EVERY part of NMT models. It is designed to be simple and clear, yet flexible.
 
@@ -64,11 +64,18 @@ cp examples/dataset.json.example private/dataset.json
 
 Train a RNMT+ model and evaluate it
 ```bash
-./bin/run.py -d private/dataset.json -tok iwslt15_vien --opt_gpus 1 --opt_model nmt_plus --opt_weightdecay --train --test --evaluate
+./bin/run.py -d private/dataset.json -tok iwslt15_vien --opt_gpus 1 --opt_model rnmt_plus --opt_weightdecay --train --test --evaluate
 ```
 
+Instead of run the command with `--train --test --evaluate`, you can simply use `--all`.
 
+(Option) Run the experiment with multiple GPUs
 
+Make sure you have installed Open MPI and horovod, then use the following command to run with 4 GPUs:
+```bash
+mpirun -np 4 -H localhost:4 -bind-to none -map-by slot -x LD_LIBRARY_PATH -x PATH \
+./bin/run.py -d private/dataset.json -tok iwslt15_vien --opt_gpus 4 --opt_model rnmt_plus --opt_weightdecay --all
+```
 
 # Using nmtlab in Python
 
