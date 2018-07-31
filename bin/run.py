@@ -25,7 +25,7 @@ ap.add_argument("--evaluate", action="store_true", help="evaluate tokenized BLEU
 ap.add_argument("--all", action="store_true", help="run all phases")
 # Dataset config path
 ap.add_argument("-d", "--dataset", type=str, default="private/dataset.json", help="dataset config")
-ap.add_argument("--opt_datatok", default="iwslt15_vien", type=str, help="datapair token")
+ap.add_argument("-tok", "--opt_datatok", default="none", type=str, help="datapair token")
 # Model options
 ap.add_argument("--opt_model", default="attention", help="model name")
 ap.add_argument("--opt_hiddensz", type=int, default=256, help="hidden size")

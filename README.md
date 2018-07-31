@@ -59,8 +59,14 @@ bash scripts/preprocess_iwslt15.sh
 
 Create dataset configuration
 ```bash
-cp 
+cp examples/dataset.json.example private/dataset.json
 ```
+
+Train a RNMT+ model and evaluate it
+```bash
+./bin/run.py -d private/dataset.json -tok iwslt15_vien --opt_gpus 1 --opt_model nmt_plus --opt_weightdecay --train --test --evaluate
+```
+
 
 
 
