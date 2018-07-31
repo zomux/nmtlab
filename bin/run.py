@@ -52,10 +52,10 @@ OPTS.parse(ap)
 if not os.path.exists(OPTS.dataset):
     raise SystemError("Can not find dataset config in {}".format(OPTS.dataset))
 dataset_config = json.load(open(OPTS.dataset, encoding="utf-8"))
-if OPTS.datatok not in dataset_config:
-    raise SystemError("Data token {} is not in the dataset".format(OPTS.datatok))
+if OPTS.tok not in dataset_config:
+    raise SystemError("Data token {} is not in the dataset".format(OPTS.tok))
 
-datapair_config = dataset_config[OPTS.datatok]
+datapair_config = dataset_config[OPTS.tok]
 train_corpus = datapair_config["train_corpus"]
 test_corpus = datapair_config["test_corpus"]
 ref_path = datapair_config["reference_path"]
