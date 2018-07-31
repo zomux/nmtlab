@@ -87,7 +87,7 @@ else:
 if OPTS.train or OPTS.all:
     # Define optimizer and scheduler
     weight_decay = 1e-5 if OPTS.weightdecay else 0
-    scheduler = AnnealScheduler(patience=3, n_total_anneal=3, anneal_factor=OPTS.anneal)
+    scheduler = AnnealScheduler(patience=3, n_total_anneal=3, anneal_factor=0.1)
     if OPTS.optim == "nestrov":
         optimizer = optim.SGD(nmt.parameters(), lr=0.25, momentum=0.99, nesterov=True, weight_decay=weight_decay)
     elif OPTS.optim == "adam":
