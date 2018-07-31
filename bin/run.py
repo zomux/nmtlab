@@ -5,6 +5,8 @@ from __future__ import division
 from __future__ import print_function
 
 import os, sys
+sys.path.append(".")
+
 import json
 import importlib.util
 from torch import optim
