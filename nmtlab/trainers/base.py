@@ -136,12 +136,7 @@ class TrainerKit(object):
             ))
         # Check new trainer settings
         if (self._current_step + 1) % self._valid_freq == 0 and self._multigpu:
-            import horovod.torch as hvd
-            lr = torch.tensor(self.learning_rate())
-            lr = hvd.broadcast(lr, ROOT_RANK)
-            new_lr = float(lr.numpy())
-            if new_lr != self.learning_rate():
-                self.set_learning_rate(new_lr)
+            self.synchronize_learning_rate()
     
     def run_valid(self):
         """Run the model on the validation set and report loss.
@@ -195,7 +190,8 @@ class TrainerKit(object):
             "step": self._current_step,
             "global_step": self._global_step,
             "model_state": self._model.state_dict(),
-            "optimizer_state": self._optimizer.state_dict()
+            "optimizer_state": self._optimizer.state_dict(),
+            "leanring_rate": self.learning_rate()
         }
         if path is None:
             path = self._save_path
@@ -206,12 +202,18 @@ class TrainerKit(object):
     def load(self, path=None):
         if path is None:
             path = self._save_path
-        state_dict = torch.load(path)
+        first_param = next(self._model.parameters())
+        device_str = str(first_param.device)
+        state_dict = torch.load(path, map_location=device_str)
         self._model.load_state_dict(state_dict["model_state"])
         self._optimizer.load_state_dict(state_dict["optimizer_state"])
         self._current_step = state_dict["step"]
         self._current_epoch = state_dict["epoch"]
-        self._global_step = state_dict["global_step"] if "global_step" in state_dict else 0
+        if "global_step" in state_dict:
+            self._global_step = state_dict["global_step"]
+        # Manually setting learning rate may be redundant?
+        if "learning_rate" in state_dict:
+            self.set_learning_rate(state_dict["learning_rate"])
     
     def is_finished(self):
         is_finished = self._scheduler.is_finished()
@@ -226,10 +228,21 @@ class TrainerKit(object):
     def learning_rate(self):
         return self._optimizer.param_groups[0]["lr"]
     
-    def set_learning_rate(self, lr):
+    def synchronize_learning_rate(self):
+        """Synchronize learning rate over all devices.
+        """
+        if self._multigpu:
+            import horovod.torch as hvd
+            lr = torch.tensor(self.learning_rate())
+            lr = hvd.broadcast(lr, ROOT_RANK)
+            new_lr = float(lr.numpy())
+            if new_lr != self.learning_rate():
+                self.set_learning_rate(new_lr, silent=True)
+        
+    def set_learning_rate(self, lr, silent=False):
         for g in self._optimizer.param_groups:
             g["lr"] = lr
-        if self._is_root_node():
+        if self._is_root_node() and not silent:
             self.log("nmtlab", "change learning rate to {:.6f}".format(lr))
     
     def begin_epoch(self, epoch):

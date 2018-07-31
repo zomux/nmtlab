@@ -1,0 +1,10 @@
+{
+    "iwslt15_vien": {
+        "train_corpus": "private/iwslt15_vien/iwslt15_train.truecased.bpe20k.vien",
+        "test_corpus": "private/iwslt15_vien/iwslt15_tst2013.truecased.bpe20k.vien",
+        "reference_path": "private/iwslt15_vien/iwslt15_tst2013.truecased.en",
+        "src_vocab_path":  "private/iwslt15_vien/iwslt15.truecased.bpe20k.vi.vocab",
+        "tgt_vocab_path": "private/iwslt15_vien/iwslt15.truecased.bpe20k.en.vocab",
+        "n_valid_per_epoch": 1
+    }
+}

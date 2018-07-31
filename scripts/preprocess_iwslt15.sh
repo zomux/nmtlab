@@ -37,4 +37,9 @@ echo "Building vocabulary ..."
 python ./bin/learn_vocab.py --corpus $DATA_DIR/iwslt15_train.truecased.bpe20k.vi --limit 20000 --vocab $DATA_DIR/iwslt15.truecased.bpe20k.vi.vocab
 python ./bin/learn_vocab.py --corpus $DATA_DIR/iwslt15_train.truecased.bpe20k.en --limit 20000 --vocab $DATA_DIR/iwslt15.truecased.bpe20k.en.vocab
 
+echo "Combining bilingual corpus ..."
+
+paste $DATA_DIR/iwslt15_train.truecased.bpe20k.vi $DATA_DIR/iwslt15_train.truecased.bpe20k.en > $DATA_DIR/iwslt15_train.truecased.bpe20k.vien
+paste $DATA_DIR/iwslt15_tst2013.truecased.bpe20k.vi $DATA_DIR/iwslt15_tst2013.truecased.bpe20k.en > $DATA_DIR/iwslt15_tst2013.truecased.bpe20k.vien
+
 echo "Done"
