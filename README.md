@@ -198,6 +198,11 @@ Please check and use the full code in `examples/rnmt_experiment.py`. Note that i
 
 The code can be run with the following command:
 ```bash
+python ./examples/rnmt_experiment.py --opt_gpus 1 --all
+```
+or
+```bash
+mpirun -np 4 -H localhost:4 -bind-to none -map-by slot -x LD_LIBRARY_PATH -x PATH \
 python ./examples/rnmt_experiment.py --opt_gpus 4 --all
 ```
 
