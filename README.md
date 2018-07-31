@@ -47,8 +47,27 @@ In this tutorial, we are going to train a NMT model on IWSLT15 Vietnam-English t
 
 Make sure you are in the root directory of nmtlab repository. First, create the directory for experiment and download corpus:
 ```bash
-bash scripts/download_iwslt
+mkdir ./private
+bash scripts/download_iwslt15.sh
 ```
+
+Preprocess the corpus 
+(trucasing, subword segmentation and extracting vocabulary):
+```bash
+bash scripts/preprocess_iwslt15.sh
+```
+
+Create dataset configuration
+```bash
+cp 
+```
+
+
+
+# Using nmtlab in Python
+
+# Design your NMT model
+
 
 
 Raphael Shu, 2018.7

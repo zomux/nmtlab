@@ -24,7 +24,7 @@ ap.add_argument("--test", action="store_true", help="testing")
 ap.add_argument("--evaluate", action="store_true", help="evaluate tokenized BLEU")
 ap.add_argument("--all", action="store_true", help="run all phases")
 # Dataset config path
-ap.add_argument("-d", "--dataset", type=str, default="dataset.json", help="dataset config")
+ap.add_argument("-d", "--dataset", type=str, default="private/dataset.json", help="dataset config")
 ap.add_argument("--opt_datatok", default="iwslt15_vien", type=str, help="datapair token")
 # Model options
 ap.add_argument("--opt_model", default="attention", help="model name")
@@ -41,7 +41,7 @@ ap.add_argument("--opt_clipnorm", type=float, default=0.1, help="max norm of gra
 ap.add_argument("--opt_criteria", default="bleu", type=str, help="criteria for model selection, must be 'bleu' or 'loss'")
 # Path configs
 ap.add_argument("--model_path",
-                default="private/nmtlab.torchmodel", help="path for saving checkpoint")
+                default="private/nmtlab.nmtmodel", help="path for saving checkpoint")
 ap.add_argument("--result_path",
                 default="private/nmtlab.result", help="path of translation result")
 OPTS.parse(ap)
@@ -87,7 +87,7 @@ else:
 if OPTS.train or OPTS.all:
     # Define optimizer and scheduler
     weight_decay = 1e-5 if OPTS.weightdecay else 0
-    scheduler = AnnealScheduler(patience=3, n_total_anneal=3, anneal_factor=0.1)
+    scheduler = AnnealScheduler(patience=3, n_total_anneal=3, anneal_factor=10)
     if OPTS.optim == "nestrov":
         optimizer = optim.SGD(nmt.parameters(), lr=0.25, momentum=0.99, nesterov=True, weight_decay=weight_decay)
     elif OPTS.optim == "adam":
