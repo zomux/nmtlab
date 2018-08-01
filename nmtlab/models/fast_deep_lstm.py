@@ -77,7 +77,7 @@ class FastDeepLSTMModel(EncoderDecoderModel):
             query = states.hidden1
             context_vector, _ = self.attention(
                 query, context.keys, context.encoder_states,
-                mask=context.mask
+                mask=context.src_mask
             )
             # Decoder layer 2
             decoder_input_2 = torch.cat([states.hidden1, context_vector], 2)
@@ -88,7 +88,7 @@ class FastDeepLSTMModel(EncoderDecoderModel):
             query = states.hidden1.squeeze(0)
             context_vector, _ = self.attention(
                 query, context.keys, context.encoder_states,
-                mask=context.mask
+                mask=context.src_mask
             )
             decoder_input_2 = torch.cat([query, context_vector], 1)
             _, (states.hidden2, states.cell2) = self.decoder_rnn_2(decoder_input_2[:, None, :], (states.hidden2, states.cell2))
