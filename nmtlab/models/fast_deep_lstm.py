@@ -18,13 +18,13 @@ from nmtlab.modules import KeyValAttention
 
 class FastDeepLSTMModel(EncoderDecoderModel):
     """Deep LSTM model with attention.
-    
+
     Encoder: bidirectional LSTM
     Decoder: two-layer forward LSTM
     Attention: KeyValue Dot Attention
     Other tricks: dropout, residual connection
     """
-    
+
     def prepare(self):
         self.src_embed_layer = nn.Embedding(self._src_vocab_size, self._embed_size)
         self.tgt_embed_layer = nn.Embedding(self._tgt_vocab_size, self._embed_size)
@@ -42,7 +42,7 @@ class FastDeepLSTMModel(EncoderDecoderModel):
         self.residual_scaler = torch.sqrt(torch.from_numpy(np.array(0.5, dtype="float32")))
         self.set_states(["hidden1", "cell1", "hidden2", "cell2"], [self._hidden_size] * 4)
         self.set_stepwise_training(False)
-        
+
     def encode(self, src_seq, src_mask=None):
         src_embed = self.src_embed_layer(src_seq)
         src_embed = self.dropout(src_embed)
@@ -63,16 +63,16 @@ class FastDeepLSTMModel(EncoderDecoderModel):
             "src_mask": src_mask
         }
         return encoder_outputs
-    
+
     def lookup_feedback(self, feedback):
         tgt_embed = self.tgt_embed_layer(feedback)
         tgt_embed = self.dropout(tgt_embed)
         return tgt_embed
-    
+
     def decode_step(self, context, states, full_sequence=False):
         if full_sequence:
             feedback_embeds = states.feedback_embed[:, :-1]
-            states.hidden1, _ = self.decoder_rnn_1(feedback_embeds)
+            states.hidden1, _ = self.decoder_rnn_1(feedback_embeds, (states.hidden1, states.cell1))
             # Attention
             query = states.hidden1
             context_vector, _ = self.attention(
@@ -81,7 +81,7 @@ class FastDeepLSTMModel(EncoderDecoderModel):
             )
             # Decoder layer 2
             decoder_input_2 = torch.cat([states.hidden1, context_vector], 2)
-            states.hidden2, _ = self.decoder_rnn_2(decoder_input_2)
+            states.hidden2, _ = self.decoder_rnn_2(decoder_input_2, (states.hidden2, states.cell2))
         else:
             feedback_embed = states.feedback_embed
             _, (states.hidden1, states.cell1) = self.decoder_rnn_1(feedback_embed[:, None, :], (states.hidden1, states.cell1))
@@ -92,13 +92,13 @@ class FastDeepLSTMModel(EncoderDecoderModel):
             )
             decoder_input_2 = torch.cat([query, context_vector], 1)
             _, (states.hidden2, states.cell2) = self.decoder_rnn_2(decoder_input_2[:, None, :], (states.hidden2, states.cell2))
-    
+
     def expand(self, decoder_outputs):
         residual_hidden = self.residual_scaler * (decoder_outputs.hidden1 + decoder_outputs.hidden2)
         residual_hidden = self.dropout(residual_hidden)
         logits = self.expander_nn(residual_hidden)
         return logits
-    
+
     def cuda(self, device=None):
         super(FastDeepLSTMModel, self).cuda(device)
         self.residual_scaler = self.residual_scaler.cuda()
