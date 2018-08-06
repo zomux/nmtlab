@@ -18,13 +18,13 @@ from nmtlab.modules import KeyValAttention
 
 class DeepLSTMModel(EncoderDecoderModel):
     """Deep LSTM model with attention.
-    
+
     Encoder: bidirectional LSTM
     Decoder: two-layer forward LSTM
     Attention: KeyValue Dot Attention
     Other tricks: dropout, residual connection
     """
-    
+
     def prepare(self):
         self.src_embed_layer = nn.Embedding(self._src_vocab_size, self._embed_size)
         self.tgt_embed_layer = nn.Embedding(self._tgt_vocab_size, self._embed_size)
@@ -41,7 +41,7 @@ class DeepLSTMModel(EncoderDecoderModel):
             nn.Linear(600, self._tgt_vocab_size))
         self.residual_scaler = torch.sqrt(torch.from_numpy(np.array(0.5, dtype="float32")))
         self.set_states(["hidden1", "cell1", "hidden2", "cell2"], [self._hidden_size] * 4)
-        
+
     def encode(self, src_seq, src_mask=None):
         src_embed = self.src_embed_layer(src_seq)
         src_embed = self.dropout(src_embed)
@@ -62,13 +62,14 @@ class DeepLSTMModel(EncoderDecoderModel):
             "src_mask": src_mask
         }
         return encoder_outputs
-    
+
     def lookup_feedback(self, feedback):
         tgt_embed = self.tgt_embed_layer(feedback)
         tgt_embed = self.dropout(tgt_embed)
         return tgt_embed
-    
+
     def decode_step(self, context, states, full_sequence=False):
+        assert not full_sequence
         feedback_embed = states.feedback_embed
         last_dec_hidden = states.hidden1.squeeze(0)
         # Attention
@@ -81,7 +82,7 @@ class DeepLSTMModel(EncoderDecoderModel):
         _, (states.hidden1, states.cell1) = self.decoder_rnn_1(dec_input[:, None, :], (states.hidden1, states.cell1))
         _, (states.hidden2, states.cell2) = self.decoder_rnn_2(states.hidden1.transpose(1, 0), (states.hidden2, states.cell2))
         return states
-    
+
     def expand(self, decoder_outputs):
         residual_hidden = self.residual_scaler * (decoder_outputs.hidden1 + decoder_outputs.hidden2)
         residual_hidden = self.dropout(residual_hidden)
