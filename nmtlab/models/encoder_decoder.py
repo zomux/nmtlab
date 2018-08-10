@@ -118,7 +118,7 @@ class EncoderDecoderModel(nn.Module):
             state_stack = []
             for t in range(T - 1):
                 states = states.copy()
-                states[t] = t
+                states.t = t
                 if sampling:
                     if t == 0:
                         feedback = context.feedbacks[:, 0].unsqueeze(0)
