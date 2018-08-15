@@ -137,6 +137,10 @@ class TrainerKit(object):
         # Check new trainer settings
         if (self._current_step + 1) % self._valid_freq == 0 and self._multigpu:
             self.synchronize_learning_rate()
+        if (self._current_step + 1) % 100 == 0 and self._multigpu:
+            from nmtlab.trainers.hvd_utils import broadcast_optimizer_state
+            broadcast_optimizer_state(self._optimizer, ROOT_RANK)
+            # hvd.broadcast_parameters(self._model.parameters(), ROOT_RANK)
     
     def run_valid(self):
         """Run the model on the validation set and report loss.
