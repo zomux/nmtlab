@@ -75,11 +75,14 @@ class EncoderDecoderModel(nn.Module):
                 scale = np.sqrt(6. / sum(get_fans(shape)))
                 param.data.uniform_(- scale, scale)
     
-    def set_states(self, state_names, state_sizes):
+    def set_states(self, state_names, state_sizes=None):
         """Set state names and sizes for the decoder.
         """
         self._state_names = state_names
-        self._state_sizes = state_sizes
+        if state_sizes is not None:
+            self._state_sizes = state_sizes
+        else:
+            self._state_sizes = [self._hidden_size] * len(state_names)
         
     def set_stepwise_training(self, flag=True):
         """Set whether the model is autoregressive when training.
