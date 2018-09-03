@@ -81,6 +81,7 @@ class FastDeepLSTMModel(EncoderDecoderModel):
             )
             # Decoder layer 2
             decoder_input_2 = torch.cat([states.hidden1, context_vector], 2)
+            decoder_input_2 = self.dropout(decoder_input_2)
             states.hidden2, _ = self.decoder_rnn_2(decoder_input_2, (states.hidden2, states.cell2))
         else:
             feedback_embed = states.feedback_embed
@@ -91,6 +92,7 @@ class FastDeepLSTMModel(EncoderDecoderModel):
                 mask=context.src_mask
             )
             decoder_input_2 = torch.cat([query, context_vector], 1)
+            decoder_input_2 = self.dropout(decoder_input_2)
             _, (states.hidden2, states.cell2) = self.decoder_rnn_2(decoder_input_2[:, None, :], (states.hidden2, states.cell2))
 
     def expand(self, decoder_outputs):

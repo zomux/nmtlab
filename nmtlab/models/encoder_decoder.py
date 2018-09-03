@@ -74,6 +74,9 @@ class EncoderDecoderModel(nn.Module):
             if len(shape) > 1:
                 scale = np.sqrt(6. / sum(get_fans(shape)))
                 param.data.uniform_(- scale, scale)
+        for module in self.modules():
+            if isinstance(module, nn.Linear):
+                module.bias.data.zero_()
     
     def set_states(self, state_names, state_sizes=None):
         """Set state names and sizes for the decoder.
