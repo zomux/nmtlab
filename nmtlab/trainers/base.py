@@ -329,14 +329,13 @@ class TrainerKit(object):
         sampled_tokens = sampled_tokens.cpu().numpy()
         tgt_mask = np.greater(tgt_seq, 0)
         for i in xrange(tgt_seq.shape[0]):
-            import pdb;pdb.set_trace()
             target_len = int(tgt_mask[i].sum())
             ref_tokens = tgt_seq[i, 1:target_len - 1]
             out_tokens = list(sampled_tokens[i])
             if 2 in out_tokens:
-                out_tokens = out_tokens[:out_tokens.index(2)]
+                out_tokens = out_tokens[1:out_tokens.index(2)]
             else:
-                out_tokens = out_tokens[:target_len - 2]
+                out_tokens = out_tokens[1:]
             if not out_tokens:
                 bleus.append(0.)
             else:

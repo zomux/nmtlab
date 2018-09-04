@@ -49,21 +49,6 @@ class EncoderDecoderModel(nn.Module):
     
     def initialize_parameters(self):
         """Initialize the parameters in the model."""
-        # Initialize bias
-        # for mod in self.modules():
-        #     if isinstance(mod, nn.Linear):
-        #         # Set bias of Linear to zero
-        #         mod.bias.data.fill_(0)
-        #     elif isinstance(mod, nn.LSTM):
-        #       # Set forget bias to 1
-        #        #for attr in dir(mod):
-        #        #    if attr.startswith("bias"):
-        #        #        param = getattr(mod, attr)
-        #        #        if isinstance(param, nn.parameter.Parameter):
-        #        #            n = param.size(0)
-        #        #            start, end = n // 4, n // 2
-        #                    # param.data.fill_(0.)
-        #        #            param.data[start:end].fill_(1.)
         # Initialize weights
         def get_fans(shape):
             fan_in = shape[0] if len(shape) == 2 else np.prod(shape[1:])
@@ -72,11 +57,19 @@ class EncoderDecoderModel(nn.Module):
         for param in self.parameters():
             shape = param.shape
             if len(shape) > 1:
-                scale = np.sqrt(6. / sum(get_fans(shape)))
-                param.data.uniform_(- scale, scale)
+                nn.init.xavier_uniform_(param)
+                # scale = np.sqrt(6. / sum(get_fans(shape)))
+                # param.data.uniform_(- scale, scale)
         for module in self.modules():
             if isinstance(module, nn.Linear):
-                module.bias.data.zero_()
+                nn.init.constant_(module.bias, 0.0)
+            # Initilalize LSTM
+            if isinstance(module, nn.LSTM):
+                for name, param in module.named_parameters():
+                    if "bias" in name:
+                        nn.init.constant_(param, 0.0)
+                        n = param.size(0)
+                        param.data[n//4: n//2].fill_(1.)
     
     def set_states(self, state_names, state_sizes=None):
         """Set state names and sizes for the decoder.
@@ -122,7 +115,8 @@ class EncoderDecoderModel(nn.Module):
         else:
             T = context.feedbacks.shape[1]
             state_stack = []
-            for t in range(T - 1):
+            steps = T + 9 if sampling else T - 1
+            for t in range(steps):
                 states = states.copy()
                 states.t = t
                 if sampling:

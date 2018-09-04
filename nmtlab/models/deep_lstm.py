@@ -80,7 +80,8 @@ class DeepLSTMModel(EncoderDecoderModel):
         # Decode
         dec_input = torch.cat((context_vector, feedback_embed), 1)
         _, (states.hidden1, states.cell1) = self.decoder_rnn_1(dec_input[:, None, :], (states.hidden1, states.cell1))
-        _, (states.hidden2, states.cell2) = self.decoder_rnn_2(states.hidden1.transpose(1, 0), (states.hidden2, states.cell2))
+        dec2_input = self.dropout(states.hidden1.transpose(1, 0))
+        _, (states.hidden2, states.cell2) = self.decoder_rnn_2(dec2_input, (states.hidden2, states.cell2))
         return states
 
     def expand(self, decoder_outputs):
