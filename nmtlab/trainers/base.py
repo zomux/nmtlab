@@ -94,7 +94,7 @@ class TrainerKit(object):
         self._n_valid_per_epoch = n_valid_per_epoch
         self._criteria = criteria
         self._valid_freq = int(self._n_train_batch / self._n_valid_per_epoch)
-        assert self._criteria in ("bleu", "loss")
+        assert self._criteria in ("bleu", "loss", "mix")
     
     @abstractmethod
     def run(self):
@@ -155,6 +155,9 @@ class TrainerKit(object):
                 if "sampled_tokens" in val_map and val_map["sampled_tokens"] is not None:
                     bleu = self._compute_bleu(val_map["sampled_tokens"], tgt_seq)
                     score_map["bleu"].append(- bleu)
+                    if self._criteria == "mix":
+                        # Trade 1 bleu point for 0.02 decrease in loss
+                        score_map["mix"].append(- bleu + val_map["loss"] / 0.02)
                     del val_map["sampled_tokens"]
                 for k, v in val_map.items():
                     if v is not None:
@@ -331,11 +334,7 @@ class TrainerKit(object):
         for i in xrange(tgt_seq.shape[0]):
             target_len = int(tgt_mask[i].sum())
             ref_tokens = tgt_seq[i, 1:target_len - 1]
-            out_tokens = list(sampled_tokens[i])
-            if 2 in out_tokens:
-                out_tokens = out_tokens[1:out_tokens.index(2)]
-            else:
-                out_tokens = out_tokens[1:]
+            out_tokens = list(sampled_tokens[i, 1:target_len - 1])
             if not out_tokens:
                 bleus.append(0.)
             else:
