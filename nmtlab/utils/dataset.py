@@ -15,7 +15,7 @@ class MTDataset(object):
     """Bilingual dataset.
     """
     
-    def __init__(self, corpus_path=None, src_corpus=None, tgt_corpus=None, src_vocab=None, tgt_vocab=None, batch_size=64, max_length=60, n_valid_samples=1000):
+    def __init__(self, corpus_path=None, src_corpus=None, tgt_corpus=None, src_vocab=None, tgt_vocab=None, batch_size=64, max_length=60, n_valid_samples=1000, truncate=None):
         
         assert corpus_path is not None or (src_corpus is not None and tgt_corpus is not None)
         assert src_vocab is not None and tgt_vocab is not None
@@ -39,6 +39,9 @@ class MTDataset(object):
             self._data = BilingualDataset(src_corpus, tgt_corpus, src, tgt, filter_pred=self._len_filter)
         # Create training and valid dataset
         examples = self._data.examples
+        if truncate is not None:
+            assert type(truncate) == int
+            examples = examples[:truncate]
         n_train_samples = len(examples) - n_valid_samples
         n_train_samples = int(n_train_samples / self._batch_size) * self._batch_size
         np.random.RandomState(3).shuffle(examples)
