@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from .trainers import MTTrainer
-from .utils.dataset import MTDataset
+from .dataset.mt_dataset import MTDataset
 from .utils.vocab import Vocab
 from .models import AttentionModel, EncoderDecoderModel
 

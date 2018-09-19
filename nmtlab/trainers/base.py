@@ -17,7 +17,8 @@ from torch.optim.optimizer import Optimizer
 from torch.autograd import Variable
 
 from nmtlab.models import EncoderDecoderModel
-from nmtlab.utils import MTDataset, smoothed_bleu
+from nmtlab.utils import smoothed_bleu
+from nmtlab.dataset import MTDataset
 from nmtlab.schedulers import Scheduler
 
 ROOT_RANK = 0
@@ -104,9 +105,12 @@ class TrainerKit(object):
     def train(self, batch):
         """Run one forward and backward step with given batch.
         """
-        src_seq = Variable(batch.src.transpose(0, 1))
-        tgt_seq = Variable(batch.tgt.transpose(0, 1))
-        val_map = self._model(src_seq, tgt_seq)
+        if isinstance(self._dataset, MTDataset):
+            src_seq = Variable(batch.src.transpose(0, 1))
+            tgt_seq = Variable(batch.tgt.transpose(0, 1))
+            val_map = self._model(src_seq, tgt_seq)
+        else:
+            val_map = self._model(*[Variable(torch.tensor(x.astype("int64"))) for x in batch])
         self._optimizer.zero_grad()
         val_map["loss"].backward()
         if self._clip_norm > 0:
@@ -147,21 +151,24 @@ class TrainerKit(object):
         """
         score_map = defaultdict(list)
         for batch in self._dataset.valid_set():
-            src_seq = batch.src.transpose(0, 1)
-            tgt_seq = batch.tgt.transpose(0, 1)
             with torch.no_grad():
-                val_map = self._model(src_seq, tgt_seq, sampling=True)
-                # Estimate BLEU
-                if "sampled_tokens" in val_map and val_map["sampled_tokens"] is not None:
-                    bleu = self._compute_bleu(val_map["sampled_tokens"], tgt_seq)
-                    score_map["bleu"].append(- bleu)
-                    if self._criteria == "mix":
-                        # Trade 1 bleu point for 0.02 decrease in loss
-                        score_map["mix"].append(- bleu + val_map["loss"] / 0.02)
-                    del val_map["sampled_tokens"]
-                for k, v in val_map.items():
-                    if v is not None:
-                        score_map[k].append(v)
+                if isinstance(self._dataset, MTDataset):
+                    src_seq = Variable(batch.src.transpose(0, 1))
+                    tgt_seq = Variable(batch.tgt.transpose(0, 1))
+                    val_map = self._model(src_seq, tgt_seq, sampling=True)
+                else:
+                    val_map = self._model(*[Variable(torch.tensor(x.astype("int64"))) for x in batch], sampling=True)
+            # Estimate BLEU
+            if "sampled_tokens" in val_map and val_map["sampled_tokens"] is not None:
+                bleu = self._compute_bleu(val_map["sampled_tokens"], tgt_seq)
+                score_map["bleu"].append(- bleu)
+                if self._criteria == "mix":
+                    # Trade 1 bleu point for 0.02 decrease in loss
+                    score_map["mix"].append(- bleu + val_map["loss"] / 0.02)
+                del val_map["sampled_tokens"]
+            for k, v in val_map.items():
+                if v is not None:
+                    score_map[k].append(v)
         for key, vals in score_map.items():
             score_map[key] = np.mean(vals)
         return score_map
@@ -303,6 +310,8 @@ class TrainerKit(object):
 
         This is to ensure the valid scores are consistent in every runs.
         """
+        if not isinstance(self._dataset, MTDataset):
+            return
         import hashlib
         valid_list = [
             " ".join(example.tgt)
