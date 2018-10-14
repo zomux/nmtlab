@@ -43,7 +43,7 @@ class MTDataset(Dataset):
             assert type(truncate) == int
             examples = examples[:truncate]
         n_train_samples = len(examples) - n_valid_samples
-        n_train_samples = int(n_train_samples / self._batch_size) * self._batch_size
+        n_train_samples = int(n_train_samples / batch_size) * batch_size
         np.random.RandomState(3).shuffle(examples)
         valid_data = torchtext.data.Dataset(
             examples[:n_valid_samples],
@@ -95,3 +95,6 @@ class MTDataset(Dataset):
     
     def tgt_vocab(self):
         return self._tgt_vocab
+    
+    def vocab_sizes(self):
+        return self._src_vocab.size(), self._tgt_vocab.size()
