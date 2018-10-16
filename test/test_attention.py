@@ -12,9 +12,18 @@ import torch.nn.functional as F
 
 class AttentionTest(unittest.TestCase):
     
-    def test_multihead_attention(self):
+    def test_multihead_attention_add(self):
         from nmtlab.modules.multihead_attention import MultiHeadAttention
         attention = MultiHeadAttention(hidden_size=16, additive=True)
+        enc_states = torch.randn((4, 8, 16))
+        dec_states = torch.randn((4, 10, 16))
+        enc_mask = torch.randn((4, 8))
+        context_vector, _ = attention(dec_states, enc_states, enc_states, mask=enc_mask)
+        self.assertEqual(tuple(context_vector.shape), (4, 10, 16))
+
+    def test_multihead_attention_dot(self):
+        from nmtlab.modules.multihead_attention import MultiHeadAttention
+        attention = MultiHeadAttention(hidden_size=16, additive=False)
         enc_states = torch.randn((4, 8, 16))
         dec_states = torch.randn((4, 10, 16))
         enc_mask = torch.randn((4, 8))
