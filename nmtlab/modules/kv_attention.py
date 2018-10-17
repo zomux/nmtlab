@@ -8,33 +8,44 @@ from __future__ import print_function
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import math
 
 
 class KeyValAttention(nn.Module):
     
-    def forward_2d(self, query, keys, values, mask=None):
+    def __init__(self, scaling=False, dropout_ratio=0):
+        """Initialize a key-value attention class.
+        Args:
+            scaling - Whether normalize the attention weights by sqrt(size)
+            dropout_ratio - The probability of dropout on the logits
+        """
+        self._scaling = scaling
+        self._dropout = nn.Dropout(dropout_ratio) if dropout_ratio > 0 else None
+        super(KeyValAttention, self).__init__()
+    
+    def forward_2d(self, query, keys, values, mask=None, dropout=None):
         """Compute attention for 2-dimensional queries (batch x hidden).
         """
-        logits = (query[:, None, :] * keys).sum(dim=2)
-        if mask is not None:
-            penalty = (1 - mask.float()) * 99.
-            logits -= penalty
-        weights = F.softmax(logits, dim=1)
-        if weights.shape[0] != values.shape[0]:
-            values = values.expand(
-                [weights.shape[0]] + list(values.shape)[1:])
-        context_vector = torch.bmm(weights[:, None, :], values).squeeze(1)
-        return context_vector, weights
+        context_vector, weights = self.forward_3d(query.unsqueeze(-2), keys, values, mask, dropout)
+        return context_vector.squeeze(-2), weights.squeeze(-2)
     
     def forward_3d(self, query, keys, values, mask=None):
         """Compute attention for 3-dimensional input (batch x step x hidden).
         """
-        logits = (query[:, :, None, :] * keys[:, None, :, :]).sum(dim=3)
+        logits = torch.matmul(query, keys.transpose(-2, -1))
+        if self._scaling:
+            logits /= math.sqrt(query.shape[-1])
         if mask is not None:
-            penalty = (1 - mask.float()) * 99.
-            logits -= penalty[:, None, :]
-        weights = F.softmax(logits, dim=2)
-        context_vector = torch.bmm(weights, values)
+            if self._dropout is not None:
+                mask = self._dropout(mask)
+            mask = mask.unsqueeze(-2)
+            logits = logits.masked_fill(mask == 0, -1e9)
+        elif self._dropout is not None:
+            # Using dropout but no mask
+            mask = self._dropout(logits.new_ones(logits.shape))
+            logits = logits.masked_fill(mask == 0, -1e9)
+        weights = F.softmax(logits, dim=-1)
+        context_vector = torch.matmul(weights, values)
         return context_vector, weights
     
     def forward(self, query, keys, values, mask=None):
@@ -43,10 +54,8 @@ class KeyValAttention(nn.Module):
         Returns:
             context vector and attention weights.
         """
-        if query.dim() == 2:
+        if query.dim() == keys.dim() - 1:
             return self.forward_2d(query, keys, values, mask)
-        elif query.dim() == 3:
-            return self.forward_3d(query, keys, values, mask)
         else:
-            raise NotImplementedError
+            return self.forward_3d(query, keys, values, mask)
 

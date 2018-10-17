@@ -3,3 +3,4 @@
 
 from .kv_attention import KeyValAttention
 from .multihead_attention import MultiHeadAttention
+from .gelu import gelu

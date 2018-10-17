@@ -39,6 +39,8 @@ class Transformer(EncoderDecoderModel):
         super(Transformer, self).__init__(**kwargs)
     
     def prepare(self):
+        # Layer Norm
+        self.layer_norm = nn.LayerNorm()
         # Embedding layers
         self.src_embed_layer = nn.Embedding(self._src_vocab_size, self._embed_size)
         self.tgt_embed_layer = nn.Embedding(self._tgt_vocab_size, self._embed_size)

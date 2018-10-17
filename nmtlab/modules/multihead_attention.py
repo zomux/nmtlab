@@ -9,75 +9,56 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from nmtlab.modules.kv_attention import KeyValAttention
+
 
 class MultiHeadAttention(nn.Module):
+    """The implementation of multi-head attention.
     
-    def __init__(self, num_head=4, hidden_size=None, additive=False):
+    Following the original description in the transformer paper.
+    """
+    
+    def __init__(self, out_size, num_head=8, hidden_size=None, additive=False, dropout_ratio=0):
         super(MultiHeadAttention, self).__init__()
+        if hidden_size is None:
+            hidden_size = out_size
         self._num_head = num_head
         self._hidden_size = hidden_size
+        self._out_size = out_size
         self._additive = additive
-        if additive and hidden_size is None:
-            raise Exception("hidden_size can not be None for additive attention.")
+        self._attention = KeyValAttention(scaling=True, dropout_ratio=dropout_ratio)
         if additive:
-            self.W_q = nn.Parameter(torch.randn((hidden_size, hidden_size)))
-            self.W_k = nn.Parameter(torch.randn((hidden_size, hidden_size)))
-            self.V_a = nn.Parameter(torch.randn(hidden_size))
-    
-    def compute_logits(self, query, keys):
-        if self._additive:
-            h_q = torch.matmul(query, self.W_q)
-            h_k = torch.matmul(keys, self.W_k)
-            if query.dim() == 2:
-                h = h_q[:, None, :] + h_k
-                h = torch.tanh(h)
-                h = h * self.V_a[None, None, :]
-                new_size = list(h.shape[:2]) + [self._num_head, -1]
-                logits = h.view(new_size).sum(-1)
-                logits = logits.permute(0, 2, 1)  # ~ B x head N x enc N
-            else:
-                h = h_q[:, :, None, :] + h_k[:, None, :, :]
-                h = torch.tanh(h)
-                h = h * self.V_a[None, None, None, :]
-                new_size = list(h.shape[:3]) + [self._num_head, -1]
-                logits = h.view(new_size).sum(-1)  # ~ B x dec N x enc N x head N
-                logits = logits.permute(0, 3, 1, 2)  # ~ B x head N x dec N x enc N
-        else:
+            # Taken from RNMT+ paper
             raise NotImplementedError
-        return logits
+        else:
+            self.linear_Q = nn.Linear(out_size, hidden_size)
+            self.linear_K = nn.Linear(out_size, hidden_size)
+            self.linear_V = nn.Linear(out_size, hidden_size)
+        self.linear_O = nn.Linear(hidden_size, out_size)
     
     def forward_2d(self, query, keys, values, mask=None):
         """Compute attention for 2-dimensional queries (batch x hidden).
         """
-        logits = self.compute_logits(query, keys)
-        if mask is not None:
-            penalty = (1 - mask.float()) * 99.
-            logits -= penalty[:, None, :]
-        weights = F.softmax(logits, dim=-1)
-        if weights.shape[0] != values.shape[0]:
-            values = values.expand(
-                [weights.shape[0]] + list(values.shape)[1:])
-        n_batch, n_head, _ = list(weights.shape)
-        _, n_enc, n_hidden = list(values.shape)
-        new_values = values.view(n_batch, n_enc, n_head, -1).permute(0, 2, 1, 3).contiguous().view(n_batch * n_head, n_enc, -1)
-        context_vector = torch.bmm(weights.view(n_batch * n_head, 1, n_enc), new_values).squeeze(1)
-        context_vector = context_vector.view(n_batch, n_head, -1).view(n_batch, -1)
-        return context_vector, weights
+        query = query.unsqueeze(1)  # (B, 1, H)
+        context_vectors, weights = self.forward_3d(query, keys, values, mask=mask)
+        context_vectors = context_vectors.squeeze(1)
+        weights = weights.squeeze(1)
+        return context_vectors, weights
     
     def forward_3d(self, query, keys, values, mask=None):
         """Compute attention for 3-dimensional input (batch x step x hidden).
         """
-        logits = self.compute_logits(query, keys)
+        B = query.shape[0]
+        head_dim = self._hidden_size // self._num_head
+        query = self.linear_Q(query).view(B, -1, self._num_head, head_dim).transpose(1, 2)  # (B, 4, T2, H)
+        keys = self.linear_K(keys).view(B, -1, self._num_head, head_dim).transpose(1, 2)
+        values = self.linear_V(values).view(B, -1, self._num_head, head_dim).transpose(1, 2)
         if mask is not None:
-            penalty = (1 - mask.float()) * 99.
-            logits -= penalty[:, None, None, :]
-        weights = F.softmax(logits, dim=-1)
-        n_batch, n_head, n_dec, _ = list(weights.shape)
-        _, n_enc, n_hidden = list(values.shape)
-        new_values = values.view(n_batch, n_enc, n_head, -1).permute(0, 2, 1, 3).contiguous().view(n_batch * n_head, n_enc, -1)
-        context_vector = torch.bmm(weights.view(n_batch * n_head, n_dec, n_enc), new_values)
-        context_vector = context_vector.view(n_batch, n_head, n_dec, -1).permute(0, 2, 1, 3).contiguous().view(n_batch, n_dec, -1)
-        return context_vector, weights
+            mask = mask.unsqueeze(1)
+        context_vectors, weights = self._attention(query, keys, values, mask=mask)  # (B, 4, T2, H)
+        context_vectors = context_vectors.transpose(1, 2).contiguous().view(B, -1, self._num_head * head_dim)  # (B, T2, H)
+        context_vectors = self.linear_O(context_vectors)
+        return context_vectors, weights
     
     def forward(self, query, keys, values, mask=None):
         """Compute the context vector with key value attention.

@@ -61,7 +61,7 @@ class RNMTPlusModel(EncoderDecoderModel):
                 decoder_lstm = nn.LSTM(self._embed_size + self._hidden_size, self._hidden_size, batch_first=True)
             setattr(self, "decoder_rnn{}".format(l + 1), decoder_lstm)
             self.decoder_rnns.append(decoder_lstm)
-        self.attention = MultiHeadAttention(num_head=4, hidden_size=self._hidden_size, additive=True)
+        self.attention = MultiHeadAttention(self._hidden_size, num_head=4, additive=False)
         self.dropout = nn.Dropout(0.2)
         self.expander_nn = nn.Sequential(
             nn.Linear(self._hidden_size * 2, 600),
