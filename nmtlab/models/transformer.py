@@ -14,6 +14,7 @@ import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from nmtlab.modules import MultiHeadAttention
+from nmtlab.modules.transformer_modules import TransformerEncoderLayer
 
 
 class Transformer(EncoderDecoderModel):
@@ -26,7 +27,7 @@ class Transformer(EncoderDecoderModel):
     TODO: per gate layer normlaization
     """
     
-    def __init__(self, num_encoders=1, num_decoders=2, layer_norm=False, **kwargs):
+    def __init__(self, num_encoders=2, num_decoders=2, ff_size=None, dropout_ratio=0.1, **kwargs):
         """Create a RNMT+ Model.
         Args:
             num_encoders - Number of bidirectional encoders.
@@ -35,24 +36,20 @@ class Transformer(EncoderDecoderModel):
         """
         self.num_encoders = num_encoders
         self.num_decoders = num_decoders
-        self.layer_norm = layer_norm
+        self._ff_size = ff_size
+        self._dropout_ratio = dropout_ratio
         super(Transformer, self).__init__(**kwargs)
     
     def prepare(self):
         # Layer Norm
-        self.layer_norm = nn.LayerNorm()
+        self.encoder_norm = nn.LayerNorm()
         # Embedding layers
         self.src_embed_layer = nn.Embedding(self._src_vocab_size, self._embed_size)
         self.tgt_embed_layer = nn.Embedding(self._tgt_vocab_size, self._embed_size)
         # Encoder
-        self.encoder_rnns = []
-        for l in range(self.num_encoders):
-            if l == 0:
-                encoder_lstm = nn.LSTM(self._embed_size, self._hidden_size, batch_first=True, bidirectional=True)
-            else:
-                encoder_lstm = nn.LSTM(self._hidden_size * 2, self._hidden_size, batch_first=True, bidirectional=True)
-            setattr(self, "encoder_rnn{}".format(l + 1), encoder_lstm)
-            self.encoder_rnns.append(encoder_lstm)
+        self.encoder_layers = []
+        for i in range(self.num_encoders):
+            self.encoder_layers.append(TransformerEncoderLayer(self._hidden_size, self._ff_size, dropout_ratio=self._dropout_ratio))
         self.project_nn = nn.Linear(self._hidden_size * 2, self._hidden_size)
         # Decoder
         self.decoder_rnns = []
@@ -79,25 +76,12 @@ class Transformer(EncoderDecoderModel):
     def encode(self, src_seq, src_mask=None):
         src_embed = self.src_embed_layer(src_seq)
         src_embed = self.dropout(src_embed)
-        enc_states = src_embed
-        for l, rnn in enumerate(self.encoder_rnns):
-            prev_states = enc_states
-            if src_mask is not None:
-                prev_states = pack_padded_sequence(prev_states, lengths=src_mask.sum(1), batch_first=True)
-            enc_states, (enc_last_hidden, _) = rnn(prev_states)
-            if src_mask is not None:
-                enc_states, _ = pad_packed_sequence(enc_states, batch_first=True)
-            enc_states = self.dropout(enc_states)
-            if l >= 2:
-                enc_states = self.residual_scaler * (enc_states + prev_states)
-            if self.layer_norm:
-                enc_states = F.layer_norm(enc_states, (self._hidden_size * 2,))
-        enc_states = self.project_nn(enc_states)
-        if self.layer_norm:
-            enc_states = F.layer_norm(enc_states, (self._hidden_size,))
+        x = src_embed
+        for l, layer in enumerate(self.encoder_layers):
+            x = layer(x, src_mask)
+        encoder_states = self.encoder_norm(x)
         encoder_outputs = {
-            "encoder_states": enc_states,
-            "keys": enc_states,
+            "encoder_states": encoder_states,
             "src_mask": src_mask
         }
         return encoder_outputs
