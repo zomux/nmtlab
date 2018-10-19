@@ -6,6 +6,7 @@ from __future__ import print_function
 
 import unittest
 
+
 class LazyDictTest(unittest.TestCase):
     
     def test_lazydict(self):

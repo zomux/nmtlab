@@ -126,9 +126,10 @@ class EncoderDecoderModel(nn.Module):
                     else:
                         logits = self.expand(states)
                         feedback = logits.argmax(-1)
-                    states.sampled_token = feedback
+                    states.prev_token = feedback
                     states.feedback_embed = self.lookup_feedback(feedback.squeeze(0))
                 else:
+                    states.prev_token = context.feedbacks[:, t]
                     states.feedback_embed = context.feedback_embeds[:, t]
                 self.decode_step(context, states)
                 state_stack.append(states)

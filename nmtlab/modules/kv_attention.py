@@ -19,9 +19,9 @@ class KeyValAttention(nn.Module):
             scaling - Whether normalize the attention weights by sqrt(size)
             dropout_ratio - The probability of dropout on the logits
         """
+        super(KeyValAttention, self).__init__()
         self._scaling = scaling
         self._dropout = nn.Dropout(dropout_ratio) if dropout_ratio > 0 else None
-        super(KeyValAttention, self).__init__()
     
     def forward_2d(self, query, keys, values, mask=None, dropout=None):
         """Compute attention for 2-dimensional queries (batch x hidden).
@@ -38,7 +38,8 @@ class KeyValAttention(nn.Module):
         if mask is not None:
             if self._dropout is not None:
                 mask = self._dropout(mask)
-            mask = mask.unsqueeze(-2)
+            if mask.dim() < logits.dim():
+                mask = mask.unsqueeze(-2)
             logits = logits.masked_fill(mask == 0, -1e9)
         elif self._dropout is not None:
             # Using dropout but no mask
