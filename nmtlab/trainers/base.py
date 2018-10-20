@@ -295,6 +295,10 @@ class TrainerKit(object):
         """
         return self._global_step
     
+    def model(self):
+        """Get model."""
+        return self._model
+    
     def devices(self):
         """Get the number of devices (GPUS).
         """

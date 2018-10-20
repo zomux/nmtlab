@@ -16,11 +16,13 @@ class MTDataset(Dataset):
     """Bilingual dataset.
     """
     
-    def __init__(self, corpus_path=None, src_corpus=None, tgt_corpus=None, src_vocab=None, tgt_vocab=None, batch_size=64, max_length=60, n_valid_samples=1000, truncate=None):
+    def __init__(self, corpus_path=None, src_corpus=None, tgt_corpus=None, src_vocab=None, tgt_vocab=None, batch_size=64, batch_type="sentence", max_length=60, n_valid_samples=1000, truncate=None):
         
         assert corpus_path is not None or (src_corpus is not None and tgt_corpus is not None)
         assert src_vocab is not None and tgt_vocab is not None
     
+        self.batch_size = batch_size
+        self.batch_type = batch_type
         self._max_length = max_length
         self._n_valid_samples = n_valid_samples
         
@@ -56,7 +58,7 @@ class MTDataset(Dataset):
             filter_pred=self._len_filter
         )
         super(MTDataset, self).__init__(train_data=train_data, valid_data=valid_data, batch_size=batch_size)
-
+        
     def set_gpu_scope(self, scope_index, n_scopes):
         """Training a specific part of data for multigpu environment.
         """

@@ -44,24 +44,24 @@ class Transformer(EncoderDecoderModel):
     
     def prepare(self):
         # Layer Norm
-        self.encoder_norm = nn.LayerNorm(self._hidden_size)
-        self.decoder_norm = nn.LayerNorm(self._hidden_size)
+        self.encoder_norm = nn.LayerNorm(self.hidden_size)
+        self.decoder_norm = nn.LayerNorm(self.hidden_size)
         # Shared embedding layer
-        self.src_embed_layer = TransformerEmbedding(self._src_vocab_size, self._embed_size)
-        self.tgt_embed_layer = TransformerEmbedding(self._tgt_vocab_size, self._embed_size)
+        self.src_embed_layer = TransformerEmbedding(self._src_vocab_size, self.embed_size)
+        self.tgt_embed_layer = TransformerEmbedding(self._tgt_vocab_size, self.embed_size)
         self.temporal_mask = TemporalMasking()
         # Encoder
         self.encoder_layers = nn.ModuleList()
         for _ in range(self.num_encoders):
-            layer = TransformerEncoderLayer(self._hidden_size, self._ff_size, dropout_ratio=self._dropout_ratio)
+            layer = TransformerEncoderLayer(self.hidden_size, self._ff_size, dropout_ratio=self._dropout_ratio)
             self.encoder_layers.append(layer)
         # Decoder
         self.decoder_layers = nn.ModuleList()
         for _ in range(self.num_decoders):
-            layer = TransformerDecoderLayer(self._hidden_size, self._ff_size, dropout_ratio=self._dropout_ratio)
+            layer = TransformerDecoderLayer(self.hidden_size, self._ff_size, dropout_ratio=self._dropout_ratio)
             self.decoder_layers.append(layer)
         # Expander
-        self.expander_nn = nn.Linear(self._hidden_size, self._tgt_vocab_size)
+        self.expander_nn = nn.Linear(self.hidden_size, self._tgt_vocab_size)
         # Decoding states need to be remembered for beam search
         state_names = ["embeddings"]
         for i in range(self.num_decoders):
@@ -105,7 +105,7 @@ class Transformer(EncoderDecoderModel):
                     old_states = states["layer{}".format(l)]
                     states["layer{}".format(l)] = torch.cat([old_states, x], 1)
                     x = states["layer{}".format(l)]
-            states["final_states"] = x[:, -1].unsqueeze(0)  # ~ (1, batch ,size)
+            states["final_states"] = self.decoder_norm(x[:, -1].unsqueeze(0))  # ~ (1, batch ,size)
     
     def expand(self, states):
         return self.expander_nn(states.final_states)

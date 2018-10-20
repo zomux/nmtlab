@@ -31,8 +31,8 @@ class EncoderDecoderModel(nn.Module):
         super(EncoderDecoderModel, self).__init__()
         if dataset is None and (src_vocab_size is None or tgt_vocab_size is None):
             raise SystemError("src_vocab_size and tgt_vocab_size must be specified.")
-        self._hidden_size = hidden_size
-        self._embed_size = embed_size
+        self.hidden_size = hidden_size
+        self.embed_size = embed_size
         self._stepwise_training = True
         self._label_uncertainty = label_uncertainty
         if dataset is not None:
@@ -41,7 +41,7 @@ class EncoderDecoderModel(nn.Module):
             self._src_vocab_size = src_vocab_size
             self._tgt_vocab_size = tgt_vocab_size
         self._state_names = state_names if state_names else ["hidden", "cell"]
-        self._state_sizes = state_sizes if state_sizes else [self._hidden_size] * len(
+        self._state_sizes = state_sizes if state_sizes else [self.hidden_size] * len(
             self._state_names)
         self._monitors = {}
         self._layers = []
@@ -79,7 +79,7 @@ class EncoderDecoderModel(nn.Module):
         if state_sizes is not None:
             self._state_sizes = state_sizes
         else:
-            self._state_sizes = [self._hidden_size] * len(state_names)
+            self._state_sizes = [self.hidden_size] * len(state_names)
         
     def set_stepwise_training(self, flag=True):
         """Set whether the model is autoregressive when training.
