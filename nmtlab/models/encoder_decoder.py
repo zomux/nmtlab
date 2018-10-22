@@ -129,8 +129,8 @@ class EncoderDecoderModel(nn.Module):
                     states.prev_token = feedback
                     states.feedback_embed = self.lookup_feedback(feedback.squeeze(0))
                 else:
-                    states.prev_token = context.feedbacks[:, t]
-                    states.feedback_embed = context.feedback_embeds[:, t]
+                    states.prev_token = context.feedbacks[:, t].unsqueeze(0)
+                    states.feedback_embed = context.feedback_embeds[:, t].unsqueeze(0)
                 self.decode_step(context, states)
                 state_stack.append(states)
             return self.combine_states(state_stack)
@@ -193,7 +193,7 @@ class EncoderDecoderModel(nn.Module):
             loss = loss.sum() / tgt_mask[:, 1:].sum().float()
         else:
             loss = (loss.view(B, T).sum(1) / (tgt_mask.sum(1) - 1).float()).mean()
-        word_acc = (flat_logits.argmax(1).eq(flat_targets) * flat_mask).view(B, T).sum(1).float() / tgt_mask[:, 1:].sum(1).float()
+        word_acc = (flat_logits.argmax(1).eq(flat_targets).float() * flat_mask).view(B, T).sum(1) / tgt_mask[:, 1:].sum(1).float()
         word_acc = word_acc.mean()
         self.monitor("word_acc", word_acc)
         return loss
@@ -207,8 +207,8 @@ class EncoderDecoderModel(nn.Module):
         """
         Forward to compute the loss.
         """
-        src_mask = torch.ne(src_seq, 0)
-        tgt_mask = torch.ne(tgt_seq, 0)
+        src_mask = torch.ne(src_seq, 0).float()
+        tgt_mask = torch.ne(tgt_seq, 0).float()
         encoder_outputs = MapDict(self.encode(src_seq, src_mask))
         context, states = self.pre_decode(encoder_outputs, tgt_seq, src_mask=src_mask, tgt_mask=tgt_mask)
         decoder_outputs = self.decode(context, states)
@@ -216,7 +216,7 @@ class EncoderDecoderModel(nn.Module):
         if sampling:
             context, states = self.pre_decode(encoder_outputs, tgt_seq, src_mask=src_mask, tgt_mask=tgt_mask)
             sample_outputs = self.decode(context, states, sampling=True)
-            self.monitor("sampled_tokens", sample_outputs.sampled_token)
+            self.monitor("sampled_tokens", sample_outputs.prev_token)
         loss = self.compute_loss(logits, tgt_seq, tgt_mask)
         self.monitor("loss", loss)
         return self._monitors

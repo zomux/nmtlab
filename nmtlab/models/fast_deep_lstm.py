@@ -47,7 +47,7 @@ class FastDeepLSTMModel(EncoderDecoderModel):
         src_embed = self.src_embed_layer(src_seq)
         src_embed = self.dropout(src_embed)
         if src_mask is not None:
-            src_embed = pack_padded_sequence(src_embed, lengths=src_mask.sum(1), batch_first=True)
+            src_embed = pack_padded_sequence(src_embed, lengths=src_mask.sum(1).int(), batch_first=True)
         encoder_states, (encoder_last_states, _) = self.encoder_rnn(src_embed)  # - B x N x s
         if src_mask is not None:
             encoder_states, _ = pad_packed_sequence(encoder_states, batch_first=True)

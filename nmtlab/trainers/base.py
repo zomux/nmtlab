@@ -44,6 +44,7 @@ class TrainerKit(object):
         self._scheduler = scheduler if scheduler is not None else Scheduler()
         self._multigpu = multigpu
         self._n_devices = 1
+        self._cuda_avaiable = torch.cuda.is_available()
         # Setup horovod1i
         if multigpu:
             try:
@@ -108,9 +109,12 @@ class TrainerKit(object):
         if isinstance(self._dataset, MTDataset):
             src_seq = Variable(batch.src.transpose(0, 1))
             tgt_seq = Variable(batch.tgt.transpose(0, 1))
-            val_map = self._model(src_seq, tgt_seq)
+            vars = [src_seq, tgt_seq]
         else:
-            val_map = self._model(*[Variable(torch.tensor(x.astype("int64"))) for x in batch])
+            vars = [Variable(torch.tensor(x.astype("int64"))) for x in batch]
+        if self._cuda_avaiable:
+            vars = [var.cuda() for var in vars]
+        val_map = self._model(*vars)
         self._optimizer.zero_grad()
         val_map["loss"].backward()
         if self._clip_norm > 0:
@@ -155,9 +159,12 @@ class TrainerKit(object):
                 if isinstance(self._dataset, MTDataset):
                     src_seq = Variable(batch.src.transpose(0, 1))
                     tgt_seq = Variable(batch.tgt.transpose(0, 1))
-                    val_map = self._model(src_seq, tgt_seq, sampling=True)
+                    vars = [src_seq, tgt_seq]
                 else:
-                    val_map = self._model(*[Variable(torch.tensor(x.astype("int64"))) for x in batch], sampling=True)
+                    vars = [Variable(torch.tensor(x.astype("int64"))) for x in batch]
+                if self._cuda_avaiable:
+                    vars = [var.cuda() for var in vars]
+                val_map = self._model(*vars, sampling=True)
             # Estimate BLEU
             if "sampled_tokens" in val_map and val_map["sampled_tokens"] is not None:
                 bleu = self._compute_bleu(val_map["sampled_tokens"], tgt_seq)
@@ -185,8 +192,9 @@ class TrainerKit(object):
     def print_progress(self, val_map):
         progress = int(float(self._current_step) / self._n_train_batch * 100)
         speed = float(self._current_step * self._batch_size) / (time.time() - self._begin_time) * self._n_devices
-        sys.stdout.write("[epoch {}|{}%] loss={:.2f} | {:.1f} sample/s   \r".format(
-            self._current_epoch + 1, progress, val_map["loss"], speed
+        unit = "token" if self._dataset.batch_type == "token" else "batch"
+        sys.stdout.write("[epoch {}|{}%] loss={:.2f} | {:.1f} {}/s   \r".format(
+            self._current_epoch + 1, progress, val_map["loss"], speed, unit
         ))
         sys.stdout.flush()
     

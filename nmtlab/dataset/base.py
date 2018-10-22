@@ -17,6 +17,7 @@ class Dataset(object):
         self._train_data = train_data
         self._valid_data = valid_data
         self._batch_size = batch_size
+        self.batch_type = "sentence"
     
     @abstractmethod
     def set_gpu_scope(self, scope_index, n_scopes):

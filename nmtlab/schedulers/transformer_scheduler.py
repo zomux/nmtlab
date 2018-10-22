@@ -12,7 +12,7 @@ class TransformerScheduler(Scheduler):
     """Scheduler for Adam training when using RNMT+ model.
     """
     
-    def __init__(self, warm_steps=500, max_steps=200000, min_lr=0.00005):
+    def __init__(self, warm_steps=5000, max_steps=20000, min_lr=0.00005):
         self._warm_steps = warm_steps
         self._max_steps = max_steps
         self._min_lr = min_lr
@@ -26,6 +26,7 @@ class TransformerScheduler(Scheduler):
         self._factor = devices * (size ** -0.5)
     
     def _learning_rate(self, t):
+        t += 1
         lr = self._factor * min(
             t ** -0.5,
             t * (self._warm_steps ** -1.5)

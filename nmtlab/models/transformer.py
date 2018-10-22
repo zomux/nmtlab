@@ -39,8 +39,10 @@ class Transformer(EncoderDecoderModel):
         self._ff_size = ff_size
         self._dropout_ratio = dropout_ratio
         super(Transformer, self).__init__(**kwargs)
-        if self._src_vocab_size != self._tgt_vocab_size:
-            raise ValueError("The vocabulary size shall be identical in both sides for transformer.")
+        # if self._src_vocab_size != self._tgt_vocab_size:
+        #     raise ValueError("The vocabulary size shall be identical in both sides for transformer.")
+        if ff_size is None:
+            self._ff_size = self.hidden_size * 4
     
     def prepare(self):
         # Layer Norm
@@ -85,17 +87,19 @@ class Transformer(EncoderDecoderModel):
     
     def decode_step(self, context, states, full_sequence=False):
         if full_sequence:
+            # During training: full sequence mode
             x = states.feedback_embed[:, :-1]
             temporal_mask = self.temporal_mask(x)
             for l, layer in enumerate(self.decoder_layers):
                 x = layer(context.encoder_states, x, context.src_mask, temporal_mask)
             states["final_states"] = self.decoder_norm(x)
         else:
+            # During beam search: stepwise mode
             feedback_embed = self.tgt_embed_layer(states.prev_token, start=states.t)  # ~ (batch, size)
             if states.t == 0:
-                states.embeddings = feedback_embed.unsqueeze(1)
+                states.embeddings = feedback_embed.transpose(0, 1)
             else:
-                states.embeddings = torch.cat([states.embeddings, feedback_embed.unsqueeze(1)], 1)
+                states.embeddings = torch.cat([states.embeddings, feedback_embed.transpose(0, 1)], 1)
             x = states.embeddings
             for l, layer in enumerate(self.decoder_layers):
                 x = layer(context.encoder_states, x, last_only=True)  # ~ (batch, 1, size)

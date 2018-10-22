@@ -5,31 +5,36 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import random
 from torchtext.data.iterator import BucketIterator
 
 
 class FixedBucketIterator(BucketIterator):
     """Fix the number of batches then put examples in them."""
     
-    def __init__(self, n_batches, n_max_tokens, **kwargs):
+    def __init__(self, fixed_batches=None, **kwargs):
         super(FixedBucketIterator, self).__init__(**kwargs)
-        self.n_batches = n_batches
-        self.n_max_tokens = n_max_tokens
+        self.fixed_batches = fixed_batches
+        assert self.fixed_batches is not None
 
-    def batch(data, batch_size, batch_size_fn=None):
-        """Yield elements from data in chunks of batch_size."""
-        if batch_size_fn is None:
-            def batch_size_fn(new, count, sofar):
-                return count
-        minibatch, size_so_far = [], 0
-        for ex in data:
-            minibatch.append(ex)
-            size_so_far = batch_size_fn(ex, len(minibatch), size_so_far)
-            if size_so_far == batch_size:
-                yield minibatch
-                minibatch, size_so_far = [], 0
-            elif size_so_far > batch_size:
-                yield minibatch[:-1]
-                minibatch, size_so_far = minibatch[-1:], batch_size_fn(ex, 1, 0)
-        if minibatch:
-            yield minibatch
+    def batch(self):
+        yield iter(self.fixed_batches)
+
+    def pool(self):
+        batches = self.fixed_batches
+        if self.random_shuffler is None:
+            random_shuffler = random.shuffle
+        else:
+            random_shuffler = self.random_shuffler
+        if self.shuffle:
+            batches = random_shuffler(batches)
+        for batch in batches:
+            if self.sort_within_batch:
+                batch = sorted(batch, key=self.sort_key)
+            yield batch
+    
+    def create_batches(self):
+        if self.sort:
+            self.batches = self.batch()
+        else:
+            self.batches = self.pool()

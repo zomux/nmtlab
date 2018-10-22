@@ -10,6 +10,7 @@ import numpy as np
 from nmtlab.utils.vocab import Vocab
 from nmtlab.dataset.bilingual_dataset import BilingualDataset
 from nmtlab.dataset.base import Dataset
+from nmtlab.dataset.fixed_iterator import FixedBucketIterator
 
 
 class MTDataset(Dataset):
@@ -21,8 +22,10 @@ class MTDataset(Dataset):
         assert corpus_path is not None or (src_corpus is not None and tgt_corpus is not None)
         assert src_vocab is not None and tgt_vocab is not None
     
-        self.batch_size = batch_size
+        self._batch_size = batch_size
         self.batch_type = batch_type
+        self._fixed_train_batches = None
+        self._fixed_valid_batches = None
         self._max_length = max_length
         self._n_valid_samples = n_valid_samples
         
@@ -57,40 +60,81 @@ class MTDataset(Dataset):
             fields=[('src', src), ('tgt', tgt)],
             filter_pred=self._len_filter
         )
+        if batch_type == "token":
+            # Precompute the batches
+            self._fixed_train_batches = self._make_fixed_batches(train_data, self._batch_size)
+            self._fixed_valid_batches = self._make_fixed_batches(valid_data, self._batch_size)
+            
         super(MTDataset, self).__init__(train_data=train_data, valid_data=valid_data, batch_size=batch_size)
-        
+    
+    def _make_fixed_batches(self, data, n_max_tokens):
+        fixed_batches = [[]]
+        cur_max_len = 0
+        for example in data:
+            new_len = max(map(len, [example.src, example.tgt]))
+            new_max_len = max(cur_max_len, new_len)
+            if new_max_len * (len(fixed_batches[-1]) + 1) > n_max_tokens:
+                # Overflow
+                fixed_batches.append([example])
+                cur_max_len = new_len
+            else:
+                # Put in the last batch
+                fixed_batches[-1].append(example)
+                cur_max_len = new_max_len
+        return fixed_batches
+    
     def set_gpu_scope(self, scope_index, n_scopes):
         """Training a specific part of data for multigpu environment.
         """
-        examples = self._train_data.examples
-        scope_size = int(float(len(examples)) / n_scopes)
-        self._train_data.examples = examples[scope_index * scope_size: (scope_index + 1) * scope_size]
-        self._batch_size = self._batch_size / n_scopes
+        if self.batch_type == "token":
+            self._batch_size = self._batch_size / n_scopes
+            train_batches = self._make_fixed_batches(self._train_data, self._batch_size)
+            scope_size = int(float(len(train_batches)) / n_scopes)
+            self._fixed_train_batches = train_batches[scope_index * scope_size: (scope_index + 1) * scope_size]
+            self._fixed_valid_batches = self._make_fixed_batches(self._valid_data, self._batch_size)
+        else:
+            examples = self._train_data.examples
+            scope_size = int(float(len(examples)) / n_scopes)
+            self._train_data.examples = examples[scope_index * scope_size: (scope_index + 1) * scope_size]
+            self._batch_size = self._batch_size / n_scopes
         
-    @staticmethod
-    def _len_filter(sample):
-        return len(sample.src) <= 60 and len(sample.tgt) <= 60
+    def _len_filter(self, sample):
+        return len(sample.src) <= self._max_length and len(sample.tgt) <= self._max_length
     
     def n_train_samples(self):
         return len(self._train_data.examples)
     
     def train_set(self):
-        batch_iterator = torchtext.data.BucketIterator(
+        kwargs = dict(
             dataset=self._train_data, batch_size=self._batch_size,
             sort=False, sort_within_batch=True,
             shuffle=True,
             sort_key=lambda x: len(x.src),
             device=None, repeat=False)
+        if self.batch_type == "token":
+            iterator_class = FixedBucketIterator
+            kwargs["fixed_batches"] = self._fixed_train_batches
+        else:
+            iterator_class = torchtext.data.BucketIterator
+        
+        batch_iterator = iterator_class(**kwargs)
         return iter(batch_iterator)
     
     def valid_set(self):
-        batch_iterator = torchtext.data.BucketIterator(
+        kwargs = dict(
             dataset=self._valid_data, batch_size=self._batch_size,
-            sort=True, sort_within_batch=True,
-            shuffle=False, train=False,
+            sort=False, sort_within_batch=True,
+            shuffle=True,
             sort_key=lambda x: len(x.src),
             device=None, repeat=False)
-        return batch_iterator
+        if self.batch_type == "token":
+            iterator_class = FixedBucketIterator
+            kwargs["fixed_batches"] = self._fixed_valid_batches
+        else:
+            iterator_class = torchtext.data.BucketIterator
+    
+        batch_iterator = iterator_class(**kwargs)
+        return iter(batch_iterator)
     
     def src_vocab(self):
         return self._src_vocab
