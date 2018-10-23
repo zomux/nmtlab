@@ -23,10 +23,10 @@ class KeyValAttention(nn.Module):
         self._scaling = scaling
         self._dropout = nn.Dropout(dropout_ratio) if dropout_ratio > 0 else None
     
-    def forward_2d(self, query, keys, values, mask=None, dropout=None):
+    def forward_2d(self, query, keys, values, mask=None):
         """Compute attention for 2-dimensional queries (batch x hidden).
         """
-        context_vector, weights = self.forward_3d(query.unsqueeze(-2), keys, values, mask, dropout)
+        context_vector, weights = self.forward_3d(query.unsqueeze(-2), keys, values, mask)
         return context_vector.squeeze(-2), weights.squeeze(-2)
     
     def forward_3d(self, query, keys, values, mask=None):

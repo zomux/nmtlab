@@ -160,10 +160,13 @@ class BeamSearchKit(object):
         hyps, final_hyps = self.collect_finished_hyps(new_hyps, final_hyps)
         return hyps, final_hyps
 
-    def combine_states(self, hyps):
+    def combine_states(self, t, hyps):
         """Batch all states in different hyptheses.
+        Args:
+            t - time step
+            hyps - hypotheses
         """
-        states = MapDict()
+        states = MapDict({"t": t})
         # Combine states
         for name in self.model.state_names():
             states[name] = torch.cat([h["state"][name] for h in hyps], 1)
@@ -171,6 +174,7 @@ class BeamSearchKit(object):
         last_tokens = torch.tensor([h["tokens"][-1] for h in hyps])
         if torch.cuda.is_available():
             last_tokens = last_tokens.cuda()
+            states.prev_token = last_tokens.unsqueeze(0)
             states.feedback_embed = self.model.lookup_feedback(last_tokens)
         return states
 

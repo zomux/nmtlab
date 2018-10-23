@@ -23,25 +23,24 @@ class MTDataset(Dataset):
         assert src_vocab is not None and tgt_vocab is not None
     
         self._batch_size = batch_size
-        self.batch_type = batch_type
         self._fixed_train_batches = None
         self._fixed_valid_batches = None
         self._max_length = max_length
         self._n_valid_samples = n_valid_samples
         
-        src = torchtext.data.Field(pad_token="<null>", preprocessing=lambda seq: ["<s>"] + seq + ["</s>"])
-        self._src_vocab = src.vocab = Vocab(src_vocab)
-        tgt = torchtext.data.Field(pad_token="<null>", preprocessing=lambda seq: ["<s>"] + seq + ["</s>"])
-        self._tgt_vocab = tgt.vocab = Vocab(tgt_vocab)
+        self._src_field = torchtext.data.Field(pad_token="<null>", preprocessing=lambda seq: ["<s>"] + seq + ["</s>"])
+        self._src_vocab = self._src_field.vocab = Vocab(src_vocab)
+        self._tgt_field = torchtext.data.Field(pad_token="<null>", preprocessing=lambda seq: ["<s>"] + seq + ["</s>"])
+        self._tgt_vocab = self._tgt_field.vocab = Vocab(tgt_vocab)
         # Make data
         if corpus_path is not None:
             self._data = torchtext.data.TabularDataset(
                 path=corpus_path, format='tsv',
-                fields=[('src', src), ('tgt', tgt)],
+                fields=[('src', self._src_field), ('tgt', self._tgt_field)],
                 filter_pred=self._len_filter
             )
         else:
-            self._data = BilingualDataset(src_corpus, tgt_corpus, src, tgt, filter_pred=self._len_filter)
+            self._data = BilingualDataset(src_corpus, tgt_corpus, self._src_field, self._tgt_field, filter_pred=self._len_filter)
         # Create training and valid dataset
         examples = self._data.examples
         if truncate is not None:
@@ -49,15 +48,22 @@ class MTDataset(Dataset):
             examples = examples[:truncate]
         n_train_samples = len(examples) - n_valid_samples
         n_train_samples = int(n_train_samples / batch_size) * batch_size
+        # Shuffle and sort examples
         np.random.RandomState(3).shuffle(examples)
+        train_examples = examples[n_valid_samples:n_valid_samples + n_train_samples]
+        valid_examples = examples[:n_valid_samples]
+        # if batch_type == "token":
+        #     train_examples.sort(key=lambda ex: len(ex.src))
+        #     valid_examples.sort(key=lambda ex: len(ex.src))
+        # Create data
         valid_data = torchtext.data.Dataset(
-            examples[:n_valid_samples],
-            fields=[('src', src), ('tgt', tgt)],
+            valid_examples,
+            fields=[('src', self._src_field), ('tgt', self._tgt_field)],
             filter_pred=self._len_filter
         )
         train_data = torchtext.data.Dataset(
-            examples[n_valid_samples:n_valid_samples + n_train_samples],
-            fields=[('src', src), ('tgt', tgt)],
+            train_examples,
+            fields=[('src', self._src_field), ('tgt', self._tgt_field)],
             filter_pred=self._len_filter
         )
         if batch_type == "token":
@@ -65,7 +71,28 @@ class MTDataset(Dataset):
             self._fixed_train_batches = self._make_fixed_batches(train_data, self._batch_size)
             self._fixed_valid_batches = self._make_fixed_batches(valid_data, self._batch_size)
             
-        super(MTDataset, self).__init__(train_data=train_data, valid_data=valid_data, batch_size=batch_size)
+        super(MTDataset, self).__init__(train_data=train_data, valid_data=valid_data, batch_size=batch_size, batch_type=batch_type)
+        
+    def use_valid_corpus(self, corpus_path=None, src_corpus=None, tgt_corpus=None):
+        if corpus_path is not None:
+            data = torchtext.data.TabularDataset(
+                path=corpus_path, format='tsv',
+                fields=[('src', self._src_field), ('tgt', self._tgt_field)],
+                filter_pred=self._len_filter
+            )
+        else:
+            data = BilingualDataset(src_corpus, tgt_corpus, self._src_field, self._tgt_field, filter_pred=self._len_filter)
+        examples = data.examples
+        # if self._batch_type == "token":
+        #     examples.sort(key=lambda ex: len(ex.src))
+        self._valid_data = torchtext.data.Dataset(
+            examples,
+            fields=[('src', self._src_field), ('tgt', self._tgt_field)],
+            filter_pred=self._len_filter
+        )
+        if self._batch_type == "token":
+            self._fixed_valid_batches = self._make_fixed_batches(self._valid_data, self._batch_size)
+        
     
     def _make_fixed_batches(self, data, n_max_tokens):
         fixed_batches = [[]]
@@ -81,12 +108,13 @@ class MTDataset(Dataset):
                 # Put in the last batch
                 fixed_batches[-1].append(example)
                 cur_max_len = new_max_len
+        np.random.RandomState(3).shuffle(fixed_batches)
         return fixed_batches
     
     def set_gpu_scope(self, scope_index, n_scopes):
         """Training a specific part of data for multigpu environment.
         """
-        if self.batch_type == "token":
+        if self._batch_type == "token":
             self._batch_size = self._batch_size / n_scopes
             train_batches = self._make_fixed_batches(self._train_data, self._batch_size)
             scope_size = int(float(len(train_batches)) / n_scopes)
@@ -103,6 +131,12 @@ class MTDataset(Dataset):
     
     def n_train_samples(self):
         return len(self._train_data.examples)
+
+    def n_train_batch(self):
+        if self._batch_type == "token":
+            return len(self._fixed_train_batches)
+        else:
+            return int(self.n_train_samples() / self._batch_size)
     
     def train_set(self):
         kwargs = dict(
@@ -111,7 +145,7 @@ class MTDataset(Dataset):
             shuffle=True,
             sort_key=lambda x: len(x.src),
             device=None, repeat=False)
-        if self.batch_type == "token":
+        if self._batch_type == "token":
             iterator_class = FixedBucketIterator
             kwargs["fixed_batches"] = self._fixed_train_batches
         else:
@@ -127,7 +161,7 @@ class MTDataset(Dataset):
             shuffle=True,
             sort_key=lambda x: len(x.src),
             device=None, repeat=False)
-        if self.batch_type == "token":
+        if self._batch_type == "token":
             iterator_class = FixedBucketIterator
             kwargs["fixed_batches"] = self._fixed_valid_batches
         else:

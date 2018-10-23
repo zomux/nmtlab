@@ -74,6 +74,8 @@ class TrainerKit(object):
         self._current_epoch = 0
         self._current_step = 0
         self._global_step = 0
+        self._train_scores = defaultdict(float)
+        self._train_count = 0
         # Print information
         self.log("nmtlab", "Training {} with {} parameters".format(
             self._model.__class__.__name__, len(list(self._model.named_parameters()))
@@ -88,7 +90,7 @@ class TrainerKit(object):
             hvd.size() if multigpu else 1, device_name
         ))
     
-    def configure(self, save_path=None, clip_norm=5, n_valid_per_epoch=10, criteria="bleu"):
+    def configure(self, save_path=None, clip_norm=0, n_valid_per_epoch=10, criteria="bleu"):
         """Configure the hyperparameters of the trainer.
         """
         self._save_path = save_path
@@ -106,6 +108,9 @@ class TrainerKit(object):
     def train(self, batch):
         """Run one forward and backward step with given batch.
         """
+        self._optimizer.zero_grad()
+        self._optimizer.step()
+        # import pdb;pdb.set_trace()
         if isinstance(self._dataset, MTDataset):
             src_seq = Variable(batch.src.transpose(0, 1))
             tgt_seq = Variable(batch.tgt.transpose(0, 1))
@@ -126,6 +131,7 @@ class TrainerKit(object):
             # print([p.grad.data.norm() for p in self._model.parameters()])
         self._optimizer.step()
         self.print_progress(val_map)
+        self.record_train_scores(val_map)
         self._global_step += 1
         return val_map
     
@@ -133,6 +139,8 @@ class TrainerKit(object):
         """Validate the model every few steps.
         """
         if (self._current_step + 1) % self._valid_freq == 0 and self._is_root_node():
+            import horovod.torch as hvd
+            hvd.init()
             self._model.train(False)
             score_map = self.run_valid()
             is_improved = self.check_improvement(score_map)
@@ -145,10 +153,11 @@ class TrainerKit(object):
         # Check new trainer settings
         if (self._current_step + 1) % self._valid_freq == 0 and self._multigpu:
             self.synchronize_learning_rate()
-        if (self._current_step + 1) % 100 == 0 and self._multigpu:
-            from nmtlab.trainers.hvd_utils import broadcast_optimizer_state
-            broadcast_optimizer_state(self._optimizer, ROOT_RANK)
-            # hvd.broadcast_parameters(self._model.parameters(), ROOT_RANK)
+        if (self._current_step + 1) % 1 == 0 and self._multigpu:
+            import horovod.torch as hvd
+            # from nmtlab.trainers.hvd_utils import broadcast_optimizer_state
+            # broadcast_optimizer_state(self._optimizer, ROOT_RANK)
+            hvd.broadcast_parameters(self._model.state_dict(), ROOT_RANK)
     
     def run_valid(self):
         """Run the model on the validation set and report loss.
@@ -192,7 +201,7 @@ class TrainerKit(object):
     def print_progress(self, val_map):
         progress = int(float(self._current_step) / self._n_train_batch * 100)
         speed = float(self._current_step * self._batch_size) / (time.time() - self._begin_time) * self._n_devices
-        unit = "token" if self._dataset.batch_type == "token" else "batch"
+        unit = "token" if self._dataset.batch_type() == "token" else "batch"
         sys.stdout.write("[epoch {}|{}%] loss={:.2f} | {:.1f} {}/s   \r".format(
             self._current_epoch + 1, progress, val_map["loss"], speed, unit
         ))
@@ -267,17 +276,27 @@ class TrainerKit(object):
         if self._is_root_node() and not silent:
             self.log("nmtlab", "change learning rate to {:.6f}".format(lr))
     
+    def record_train_scores(self, scores):
+        for k, val in scores.items():
+            self._train_scores[k] += float(val.cpu())
+        self._train_count += 1
+        
     def begin_epoch(self, epoch):
         """Set current epoch.
         """
         self._current_epoch = epoch
         self._scheduler.before_epoch()
         self._begin_time = time.time()
+        self._train_count = 0
+        self._train_scores.clear()
     
     def end_epoch(self):
         """End one epoch.
         """
         self._scheduler.after_epoch()
+        for k in self._train_scores:
+            self._train_scores[k] /= self._train_count
+        self.log("train", self._dict_str(self._train_scores))
         self.log("nmtlab", "Ending epoch {}, spent {} minutes  ".format(
             self._current_epoch + 1, int(self.epoch_time() / 60.)
         ))
@@ -330,7 +349,7 @@ class TrainerKit(object):
             for example in self._dataset.raw_valid_data().examples
         ]
         valid_hash = hashlib.sha1("\n".join(valid_list).encode("utf-8", "ignore")).hexdigest()[-8:]
-        self.log("nmtlab", "Hash of validation data is {}".format(valid_hash))
+        self.log("nmtlab", "Validation data has {} samples, with hash {}".format(len(valid_list), valid_hash))
 
     def _clip_grad_norm(self):
         """Clips gradient norm of parameters.

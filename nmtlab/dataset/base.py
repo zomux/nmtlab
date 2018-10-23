@@ -13,11 +13,11 @@ class Dataset(object):
     """
     __metaclass__ = ABCMeta
     
-    def __init__(self, train_data=None, valid_data=None, batch_size=32):
+    def __init__(self, train_data=None, valid_data=None, batch_size=32, batch_type="sentence"):
         self._train_data = train_data
         self._valid_data = valid_data
         self._batch_size = batch_size
-        self.batch_type = "sentence"
+        self._batch_type = batch_type
     
     @abstractmethod
     def set_gpu_scope(self, scope_index, n_scopes):
@@ -58,6 +58,9 @@ class Dataset(object):
     
     def batch_size(self):
         return self._batch_size
+    
+    def batch_type(self):
+        return self._batch_type
     
     def set_batch_size(self, batch_size):
         """Change the batch size of the dataset.

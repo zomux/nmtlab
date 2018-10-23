@@ -22,8 +22,7 @@ class BeamTranslator(BeamSearchKit):
         
         for t in range(MAX_STEPS):
             # Make batch of states
-            states = self.combine_states(hyps)
-            states.t = t
+            states = self.combine_states(t, hyps)
             
             # Decode one step
             new_states = self.decode_step(encoder_outputs, states)

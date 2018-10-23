@@ -27,7 +27,7 @@ class Transformer(EncoderDecoderModel):
     Other tricks: dropout, residual connection, layer normalization
     """
     
-    def __init__(self, num_encoders=2, num_decoders=2, ff_size=None, dropout_ratio=0.1, **kwargs):
+    def __init__(self, num_encoders=3, num_decoders=3, ff_size=None, dropout_ratio=0.1, **kwargs):
         """Create a RNMT+ Model.
         Args:
             num_encoders - Number of bidirectional encoders.
@@ -45,6 +45,8 @@ class Transformer(EncoderDecoderModel):
             self._ff_size = self.hidden_size * 4
     
     def prepare(self):
+        from nmtlab.modules.transformer_modules import LabelSmoothingKLDivLoss
+        self.label_smooth = LabelSmoothingKLDivLoss(0.1, self._tgt_vocab_size, 0)
         # Layer Norm
         self.encoder_norm = nn.LayerNorm(self.hidden_size)
         self.decoder_norm = nn.LayerNorm(self.hidden_size)
@@ -71,6 +73,11 @@ class Transformer(EncoderDecoderModel):
         self.set_states(state_names)
         self.set_stepwise_training(False)
     
+    def initialize_parameters(self):
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+    
     def encode(self, src_seq, src_mask=None):
         x = self.src_embed_layer(src_seq)
         for l, layer in enumerate(self.encoder_layers):
@@ -81,6 +88,18 @@ class Transformer(EncoderDecoderModel):
             "src_mask": src_mask
         }
         return encoder_outputs
+    
+    def compute_loss(self, logits, tgt_seq, tgt_mask):
+        B, T, _ = logits.shape
+        logits = F.log_softmax(logits, dim=2)
+        flat_logits = logits.contiguous().view(B * T, self._tgt_vocab_size)
+        flat_targets = tgt_seq[:, 1:].contiguous().view(B * T)
+        flat_mask = tgt_mask[:, 1:].contiguous().view(B * T)
+        loss = self.label_smooth(flat_logits, flat_targets) / flat_mask.sum()
+        word_acc = (flat_logits.argmax(1).eq(flat_targets).float() * flat_mask).view(B, T).sum(1) / tgt_mask[:, 1:].sum(1).float()
+        word_acc = word_acc.mean()
+        self.monitor("word_acc", word_acc)
+        return loss
     
     def lookup_feedback(self, feedback):
         return self.tgt_embed_layer(feedback)
