@@ -5,9 +5,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from nmtlab.modules.kv_attention import KeyValAttention
 
@@ -51,8 +49,8 @@ class MultiHeadAttention(nn.Module):
         B = query.shape[0]
         head_dim = self._hidden_size // self._num_head
         query = self.linear_Q(query).view(B, -1, self._num_head, head_dim).transpose(1, 2)  # (B, 4, T2, H)
-        keys = self.linear_K(keys).view(B, -1, self._num_head, head_dim).transpose(1, 2)
-        values = self.linear_V(values).view(B, -1, self._num_head, head_dim).transpose(1, 2)
+        keys = self.linear_K(keys).view(keys.shape[0], -1, self._num_head, head_dim).transpose(1, 2)
+        values = self.linear_V(values).view(values.shape[0], -1, self._num_head, head_dim).transpose(1, 2)
         if mask is not None and mask.dim() < keys.dim():
             mask = mask.unsqueeze(1)
         context_vectors, weights = self._attention(query, keys, values, mask=mask)  # (B, 4, T2, H)

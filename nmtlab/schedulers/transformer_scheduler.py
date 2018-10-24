@@ -27,7 +27,7 @@ class TransformerScheduler(Scheduler):
         self._size_factor = size ** -0.5
     
     def _learning_rate(self, t):
-        t = float(t + 1) / self._devices
+        t = float(t + 1)
         lr = self._factor * self._size_factor * min(
             t ** -0.5,
             t * (self._warm_steps ** -1.5)

@@ -116,18 +116,18 @@ class Transformer(EncoderDecoderModel):
             # During beam search: stepwise mode
             feedback_embed = self.tgt_embed_layer(states.prev_token, start=states.t)  # ~ (batch, size)
             if states.t == 0:
-                states.embeddings = feedback_embed.transpose(0, 1)
+                states.embeddings = feedback_embed
             else:
-                states.embeddings = torch.cat([states.embeddings, feedback_embed.transpose(0, 1)], 1)
-            x = states.embeddings
+                states.embeddings = torch.cat([states.embeddings, feedback_embed], 0)
+            x = states.embeddings.transpose(0, 1)
             for l, layer in enumerate(self.decoder_layers):
                 x = layer(context.encoder_states, x, last_only=True)  # ~ (batch, 1, size)
                 if states.t == 0:
-                    states["layer{}".format(l)] = x
+                    states["layer{}".format(l)] = x.transpose(0, 1)
                 else:
                     old_states = states["layer{}".format(l)]
-                    states["layer{}".format(l)] = torch.cat([old_states, x], 1)
-                    x = states["layer{}".format(l)]
+                    states["layer{}".format(l)] = torch.cat([old_states, x.transpose(0, 1)], 0)
+                    x = states["layer{}".format(l)].transpose(0, 1)
             states["final_states"] = self.decoder_norm(x[:, -1].unsqueeze(0))  # ~ (1, batch ,size)
     
     def expand(self, states):

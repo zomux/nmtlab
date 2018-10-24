@@ -53,8 +53,8 @@ class MTDataset(Dataset):
         train_examples = examples[n_valid_samples:n_valid_samples + n_train_samples]
         valid_examples = examples[:n_valid_samples]
         # if batch_type == "token":
-        #     train_examples.sort(key=lambda ex: len(ex.src))
-        #     valid_examples.sort(key=lambda ex: len(ex.src))
+            # train_examples.sort(key=lambda ex: len(ex.src))
+            # valid_examples.sort(key=lambda ex: len(ex.src))
         # Create data
         valid_data = torchtext.data.Dataset(
             valid_examples,
@@ -92,7 +92,6 @@ class MTDataset(Dataset):
         )
         if self._batch_type == "token":
             self._fixed_valid_batches = self._make_fixed_batches(self._valid_data, self._batch_size)
-        
     
     def _make_fixed_batches(self, data, n_max_tokens):
         fixed_batches = [[]]

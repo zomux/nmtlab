@@ -154,9 +154,9 @@ class TrainerKit(object):
         if (self._current_step + 1) % self._valid_freq == 0 and self._multigpu:
             self.synchronize_learning_rate()
         if (self._current_step + 1) % 1 == 0 and self._multigpu:
-            import horovod.torch as hvd
             # from nmtlab.trainers.hvd_utils import broadcast_optimizer_state
             # broadcast_optimizer_state(self._optimizer, ROOT_RANK)
+            import horovod.torch as hvd
             hvd.broadcast_parameters(self._model.state_dict(), ROOT_RANK)
     
     def run_valid(self):
