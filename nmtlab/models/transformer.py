@@ -109,12 +109,15 @@ class Transformer(EncoderDecoderModel):
             # During training: full sequence mode
             x = states.feedback_embed[:, :-1]
             temporal_mask = self.temporal_mask(x)
+            # print("full embed", x[1, :, :2])
             for l, layer in enumerate(self.decoder_layers):
                 x = layer(context.encoder_states, x, context.src_mask, temporal_mask)
+                # print("full {}".format(l), x[1, :, :2])
             states["final_states"] = self.decoder_norm(x)
         else:
             # During beam search: stepwise mode
-            feedback_embed = self.tgt_embed_layer(states.prev_token, start=states.t)  # ~ (batch, size)
+            feedback_embed = self.tgt_embed_layer(states.prev_token.transpose(0, 1), start=states.t).transpose(0, 1)  # ~ (batch, size)
+            # print("embed", feedback_embed[0, 1, :2])
             if states.t == 0:
                 states.embeddings = feedback_embed
             else:
@@ -122,6 +125,7 @@ class Transformer(EncoderDecoderModel):
             x = states.embeddings.transpose(0, 1)
             for l, layer in enumerate(self.decoder_layers):
                 x = layer(context.encoder_states, x, last_only=True)  # ~ (batch, 1, size)
+                # print("a {}".format(l), x[1, 0, :2])
                 if states.t == 0:
                     states["layer{}".format(l)] = x.transpose(0, 1)
                 else:

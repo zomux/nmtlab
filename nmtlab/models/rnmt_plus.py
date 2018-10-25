@@ -131,7 +131,7 @@ class RNMTPlusModel(EncoderDecoderModel):
             for l, rnn in enumerate(self.decoder_rnns):
                 lstm_state = (getattr(states, "hidden{}".format(l + 1)), getattr(states, "cell{}".format(l + 1)))
                 if l == 0:
-                    _, (states.hidden1, states.cell1) = rnn(feedback_embed[:, None, :], lstm_state)
+                    _, (states.hidden1, states.cell1) = rnn(feedback_embed.transpose(0, 1), lstm_state)
                     dec_states = states.hidden1
                     if self.layer_norm:
                         dec_states = F.layer_norm(dec_states, (self.hidden_size,))

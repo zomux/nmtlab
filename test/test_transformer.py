@@ -37,7 +37,7 @@ class TransformerTest(unittest.TestCase):
         context, states = self.model.pre_decode(context, target_seq, src_mask=src_mask)
         context = MapDict(context)
         stepwise_states = self.model.decode(context, states, False)
-        self.assertEqual(torch.eq(full_states.final_states, stepwise_states.final_states).prod().numpy(), 1)
+        self.assertAlmostEqual(float((full_states.final_states - stepwise_states.final_states).sum()), 0, delta=0.0001)
 
 
 if __name__ == '__main__':

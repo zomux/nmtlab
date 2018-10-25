@@ -50,13 +50,16 @@ class BeamSearchKit(object):
         """
         return self.target_vocab.decode(raw_result)
     
-    def translate(self, sentence):
+    def translate(self, sentence, greedy=False):
         """Translate one sentence.
         """
         self.model.train(False)
         input_tokens = self.preprocess(sentence)
         with torch.no_grad():
-            result, score = self.beam_search(input_tokens)
+            if greedy:
+                result, score = self.greedy_search(input_tokens)
+            else:
+                result, score = self.beam_search(input_tokens)
         if result:
             result_words = self.postprocess(sentence, result)
             output_line = " ".join(result_words)
@@ -65,6 +68,22 @@ class BeamSearchKit(object):
             # When failed
             return None, None
     
+    def greedy_search(self, input_tokens):
+        """Bypass beam search, as a way to verify the output.
+        """
+        
+        src_seq = torch.tensor(input_tokens).unsqueeze(0)
+        if torch.cuda.is_available():
+            src_seq = src_seq.cuda()
+        with torch.no_grad():
+            val_map = self.model(src_seq, torch.ones_like(src_seq), sampling=True)
+        sampled_tokens = val_map["sampled_tokens"]
+        score = float(val_map["loss"].cpu())
+        sampled_tokens = sampled_tokens[0].cpu().numpy().tolist()[1:]
+        if self.end_token_id in sampled_tokens:
+            sampled_tokens = sampled_tokens[:sampled_tokens.index(self.end_token_id)]
+        return sampled_tokens, score
+        
     def initialize_hyps(self, encoder_outputs, items=None):
         """Initialize the first hypothesis for beam search.
         """
