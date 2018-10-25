@@ -75,6 +75,7 @@ class BeamSearchKit(object):
         src_seq = torch.tensor(input_tokens).unsqueeze(0)
         if torch.cuda.is_available():
             src_seq = src_seq.cuda()
+        self.model.train(False)
         with torch.no_grad():
             val_map = self.model(src_seq, torch.ones_like(src_seq), sampling=True)
         sampled_tokens = val_map["sampled_tokens"]

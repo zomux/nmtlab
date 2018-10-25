@@ -43,6 +43,7 @@ class KeyValAttention(nn.Module):
             logits = logits.masked_fill(mask == 0, -1e9)
         elif self._dropout is not None:
             # Using dropout but no mask
+            import pdb;pdb.set_trace()
             mask = self._dropout(logits.new_ones(logits.shape))
             logits = logits.masked_fill(mask == 0, -1e9)
         weights = F.softmax(logits, dim=-1)
