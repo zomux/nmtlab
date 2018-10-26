@@ -27,7 +27,7 @@ class Transformer(EncoderDecoderModel):
     Other tricks: dropout, residual connection, layer normalization
     """
     
-    def __init__(self, num_encoders=3, num_decoders=3, ff_size=None, dropout_ratio=0.1, **kwargs):
+    def __init__(self, num_encoders=3, num_decoders=3, ff_size=None, n_att_heads=2, dropout_ratio=0.1, **kwargs):
         """Create a RNMT+ Model.
         Args:
             num_encoders - Number of bidirectional encoders.
@@ -37,6 +37,7 @@ class Transformer(EncoderDecoderModel):
         self.num_encoders = num_encoders
         self.num_decoders = num_decoders
         self._ff_size = ff_size
+        self._n_att_heads = n_att_heads
         self._dropout_ratio = dropout_ratio
         super(Transformer, self).__init__(**kwargs)
         # if self._src_vocab_size != self._tgt_vocab_size:
@@ -57,12 +58,12 @@ class Transformer(EncoderDecoderModel):
         # Encoder
         self.encoder_layers = nn.ModuleList()
         for _ in range(self.num_encoders):
-            layer = TransformerEncoderLayer(self.hidden_size, self._ff_size, dropout_ratio=self._dropout_ratio)
+            layer = TransformerEncoderLayer(self.hidden_size, self._ff_size, n_att_head=self._n_att_heads, dropout_ratio=self._dropout_ratio)
             self.encoder_layers.append(layer)
         # Decoder
         self.decoder_layers = nn.ModuleList()
         for _ in range(self.num_decoders):
-            layer = TransformerDecoderLayer(self.hidden_size, self._ff_size, dropout_ratio=self._dropout_ratio)
+            layer = TransformerDecoderLayer(self.hidden_size, self._ff_size, n_att_head=self._n_att_heads, dropout_ratio=self._dropout_ratio)
             self.decoder_layers.append(layer)
         # Expander
         self.expander_nn = nn.Linear(self.hidden_size, self._tgt_vocab_size)
