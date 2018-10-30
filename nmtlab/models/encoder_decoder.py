@@ -8,6 +8,7 @@ from __future__ import print_function
 from six.moves import zip
 
 from abc import abstractmethod, ABCMeta
+from collections import defaultdict
 
 import numpy as np
 import torch
@@ -213,13 +214,20 @@ class EncoderDecoderModel(nn.Module):
         context, states = self.pre_decode(encoder_outputs, tgt_seq, src_mask=src_mask, tgt_mask=tgt_mask)
         decoder_outputs = self.decode(context, states)
         logits = self.expand(decoder_outputs)
+        loss = self.compute_loss(logits, tgt_seq, tgt_mask)
         if sampling:
             context, states = self.pre_decode(encoder_outputs, tgt_seq, src_mask=src_mask, tgt_mask=tgt_mask)
             sample_outputs = self.decode(context, states, sampling=True)
             self.monitor("sampled_tokens", sample_outputs.prev_token)
-        loss = self.compute_loss(logits, tgt_seq, tgt_mask)
         self.monitor("loss", loss)
         return self._monitors
+    
+    def compute_shard_loss(self, decoder_outputs, tgt_seq, tgt_mask):
+        B = tgt_seq.shape[0]
+        score_map = defaultdict(list)
+        for i in range(0, B, 2):
+            score_map
+        
 
     def load(self, path):
         state_dict = torch.load(path)
