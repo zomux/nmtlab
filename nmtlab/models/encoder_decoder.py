@@ -194,9 +194,9 @@ class EncoderDecoderModel(nn.Module):
             loss = loss.sum() / tgt_mask[:, 1:].sum().float()
         else:
             loss = (loss.view(B, T).sum(1) / (tgt_mask.sum(1) - 1).float()).mean()
-        word_acc = (flat_logits.argmax(1).eq(flat_targets).float() * flat_mask).view(B, T).sum(1) / tgt_mask[:, 1:].sum(1).float()
-        word_acc = word_acc.mean()
-        self.monitor("word_acc", word_acc)
+        # word_acc = (flat_logits.argmax(1).eq(flat_targets).float() * flat_mask).view(B, T).sum(1) / tgt_mask[:, 1:].sum(1).float()
+        # word_acc = word_acc.mean()
+        # self.monitor("word_acc", word_acc)
         return loss
     
     def monitor(self, key, value):
@@ -222,12 +222,26 @@ class EncoderDecoderModel(nn.Module):
         self.monitor("loss", loss)
         return self._monitors
     
+    def compute_word_accuracy(self, logits, tgt_seq, tgt_mask):
+        preds = logits.argmax(2)
+        tgt_seq = tgt_seq[:, 1:]
+        tgt_mask = tgt_mask[:, 1:]
+        word_acc = (preds.eq(tgt_seq).float() * tgt_mask).sum(1) / tgt_mask.sum(1).float()
+        return word_acc.mean()
+    
     def compute_shard_loss(self, decoder_outputs, tgt_seq, tgt_mask):
+        assert isinstance(decoder_outputs, LazyDict)
         B = tgt_seq.shape[0]
         score_map = defaultdict(list)
         for i in range(0, B, 2):
-            score_map
-        
+            decoder_outputs.select_batch(i, i + 2)
+            logits = self.expand(decoder_outputs)
+            loss = self.compute_loss(logits, tgt_seq[i:i+2], tgt_mask[i:i+2])
+            word_acc = self.compute_word_accuracy(logits, tgt_seq[i:i+2], tgt_mask[i:i+2])
+            score_map["loss"].append(loss)
+            score_map["word_acc"].append(word_acc)
+        for k in score_map:
+            self.monitor(k, sum(score_map[k]) / len(score_map[k]))
 
     def load(self, path):
         state_dict = torch.load(path)

@@ -110,7 +110,6 @@ class TrainerKit(object):
         """
         self._optimizer.zero_grad()
         self._optimizer.step()
-        # import pdb;pdb.set_trace()
         if isinstance(self._dataset, MTDataset):
             src_seq = Variable(batch.src.transpose(0, 1))
             tgt_seq = Variable(batch.tgt.transpose(0, 1))
