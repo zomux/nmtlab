@@ -178,7 +178,7 @@ class EncoderDecoderModel(nn.Module):
         Expand decoder outputs to a vocab-size tensor.
         """
     
-    def compute_loss(self, logits, tgt_seq, tgt_mask):
+    def compute_loss(self, logits, tgt_seq, tgt_mask, denominator=None):
         if self._label_uncertainty > 0 and self.training:
             uniform_seq = tgt_seq.float().uniform_(0, self._tgt_vocab_size)
             smooth_mask = tgt_seq.float().bernoulli_(self._label_uncertainty)
@@ -188,12 +188,11 @@ class EncoderDecoderModel(nn.Module):
         logits = F.log_softmax(logits, dim=2)
         flat_logits = logits.contiguous().view(B * T, self._tgt_vocab_size)
         flat_targets = tgt_seq[:, 1:].contiguous().view(B * T)
-        flat_mask = tgt_mask[:, 1:].contiguous().view(B * T)
         loss = nn.NLLLoss(ignore_index=0, reduce=False).forward(flat_logits, flat_targets)
-        if OPTS.wordloss:
+        if denominator is None:
             loss = loss.sum() / tgt_mask[:, 1:].sum().float()
         else:
-            loss = (loss.view(B, T).sum(1) / (tgt_mask.sum(1) - 1).float()).mean()
+            loss = loss.sum() / denominator
         # word_acc = (flat_logits.argmax(1).eq(flat_targets).float() * flat_mask).view(B, T).sum(1) / tgt_mask[:, 1:].sum(1).float()
         # word_acc = word_acc.mean()
         # self.monitor("word_acc", word_acc)
@@ -233,10 +232,11 @@ class EncoderDecoderModel(nn.Module):
         assert isinstance(decoder_outputs, LazyDict)
         B = tgt_seq.shape[0]
         score_map = defaultdict(list)
+        denom = tgt_mask.sum()
         for i in range(0, B, 2):
             decoder_outputs.select_batch(i, i + 2)
             logits = self.expand(decoder_outputs)
-            loss = self.compute_loss(logits, tgt_seq[i:i+2], tgt_mask[i:i+2])
+            loss = self.compute_loss(logits, tgt_seq[i:i+2], tgt_mask[i:i+2], denominator=denom)
             word_acc = self.compute_word_accuracy(logits, tgt_seq[i:i+2], tgt_mask[i:i+2])
             score_map["loss"].append(loss)
             score_map["word_acc"].append(word_acc)
