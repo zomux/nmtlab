@@ -14,13 +14,23 @@ class LazyDict(Mapping):
     
     def __init__(self, *args, **kwargs):
         self._selected_batch = None
+        self._detach = False
+        self._detach_map = {}
         self._raw_dict = dict(*args, **kwargs)
     
     def __getattr__(self, attr):
         return self._raw_dict.get(attr)(attr)
     
     def __getitem__(self, item):
-        ret = self._raw_dict.get(item)(item)
+        if self._detach and item in self._detach_map:
+            ret = self._detach_map[item][0]
+        else:
+            ret = self._raw_dict.get(item)(item)
+            if self._detach:
+                detached_item = ret.detach()
+                detached_item.requires_grad = True
+                self._detach_map[item] = (detached_item, ret)
+                ret = detached_item
         if self._selected_batch is not None:
             start, end = self._selected_batch
             ret = ret[start:end]
@@ -45,10 +55,16 @@ class LazyDict(Mapping):
         for k, v in m.items():
             self[k] = v
             
-    def select_batch(self, start, end):
+    def select_batch(self, start, end, detach=False):
         """Let the lazy dict return only the batches in the selected range.
         """
         self._selected_batch = (start, end)
+        self._detach = detach
     
     def unselect_batch(self):
         self._selected_batch = None
+        self._detach = False
+        self._detach_map.clear()
+    
+    def get_detached_items(self):
+        return self._detach_map
