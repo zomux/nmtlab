@@ -19,7 +19,7 @@ class LazyDict(Mapping):
         self._raw_dict = dict(*args, **kwargs)
     
     def __getattr__(self, attr):
-        return self._raw_dict.get(attr)(attr)
+        return self.__getitem__(attr)
     
     def __getitem__(self, item):
         if self._detach and item in self._detach_map:

@@ -213,12 +213,17 @@ class EncoderDecoderModel(nn.Module):
         context, states = self.pre_decode(encoder_outputs, tgt_seq, src_mask=src_mask, tgt_mask=tgt_mask)
         decoder_outputs = self.decode(context, states)
         logits = self.expand(decoder_outputs)
-        loss = self.compute_loss(logits, tgt_seq, tgt_mask)
+        if OPTS.shard:
+            self.compute_shard_loss(decoder_outputs, tgt_seq, tgt_mask)
+        else:
+            loss = self.compute_loss(logits, tgt_seq, tgt_mask)
+            acc = self.compute_word_accuracy(logits, tgt_seq, tgt_mask)
+            self.monitor("loss", loss)
+            self.monitor("word_acc", acc)
         if sampling:
             context, states = self.pre_decode(encoder_outputs, tgt_seq, src_mask=src_mask, tgt_mask=tgt_mask)
             sample_outputs = self.decode(context, states, sampling=True)
             self.monitor("sampled_tokens", sample_outputs.prev_token)
-        self.monitor("loss", loss)
         return self._monitors
     
     def compute_word_accuracy(self, logits, tgt_seq, tgt_mask):
@@ -233,15 +238,25 @@ class EncoderDecoderModel(nn.Module):
         B = tgt_seq.shape[0]
         score_map = defaultdict(list)
         denom = tgt_mask.sum()
+        # Compute loss for each shard
+        # The computation is performed on detached decoder states
+        # Backpropagate the gradients to the deocder states
         for i in range(0, B, 2):
-            decoder_outputs.select_batch(i, i + 2)
+            decoder_outputs.select_batch(i, i + 2, detach=True)
             logits = self.expand(decoder_outputs)
             loss = self.compute_loss(logits, tgt_seq[i:i+2], tgt_mask[i:i+2], denominator=denom)
             word_acc = self.compute_word_accuracy(logits, tgt_seq[i:i+2], tgt_mask[i:i+2])
             score_map["loss"].append(loss)
             score_map["word_acc"].append(word_acc)
+            loss.backward()
+        # Monitor scores
         for k in score_map:
             self.monitor(k, sum(score_map[k]) / len(score_map[k]))
+        # Backpropagate the gradients to all the parameters
+        detached_items = decoder_outputs.get_detached_items()
+        state_tensors = [x[1] for x in detached_items]
+        grads = [x[0].grad for x in detached_items]
+        torch.autograd.backward(state_tensors, grads)
 
     def load(self, path):
         state_dict = torch.load(path)

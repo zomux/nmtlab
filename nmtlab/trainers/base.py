@@ -20,6 +20,7 @@ from nmtlab.models import EncoderDecoderModel
 from nmtlab.utils import smoothed_bleu
 from nmtlab.dataset import MTDataset
 from nmtlab.schedulers import Scheduler
+from nmtlab.utils import OPTS
 
 ROOT_RANK = 0
 
@@ -108,8 +109,8 @@ class TrainerKit(object):
     def train(self, batch):
         """Run one forward and backward step with given batch.
         """
-        self._optimizer.zero_grad()
-        self._optimizer.step()
+        # self._optimizer.zero_grad()
+        # self._optimizer.step()
         if isinstance(self._dataset, MTDataset):
             src_seq = Variable(batch.src.transpose(0, 1))
             tgt_seq = Variable(batch.tgt.transpose(0, 1))
@@ -119,8 +120,9 @@ class TrainerKit(object):
         if self._cuda_avaiable:
             vars = [var.cuda() for var in vars]
         val_map = self._model(*vars)
-        self._optimizer.zero_grad()
-        val_map["loss"].backward()
+        if not OPTS.shard:
+            self._optimizer.zero_grad()
+            val_map["loss"].backward()
         if self._clip_norm > 0:
             # print([p.grad.data.norm() for p in self._model.parameters()])
             if self._multigpu:
