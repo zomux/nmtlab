@@ -8,8 +8,8 @@ from __future__ import print_function
 from collections import Mapping
 
 
-class LazyDict(Mapping):
-    """Lazily evaluated map
+class TensorMap(Mapping):
+    """A map for contianing tensors.
     """
     
     def __init__(self, *args, **kwargs):
@@ -18,6 +18,9 @@ class LazyDict(Mapping):
         self._detach_map = {}
         self._raw_dict = dict(*args, **kwargs)
     
+    def get_raw_item(self, item):
+        return self._raw_dict.get(item)
+    
     def __getattr__(self, attr):
         return self.__getitem__(attr)
     
@@ -25,7 +28,7 @@ class LazyDict(Mapping):
         if self._detach and item in self._detach_map:
             ret = self._detach_map[item][0]
         else:
-            ret = self._raw_dict.get(item)(item)
+            ret = self.get_raw_item(item)
             if self._detach:
                 detached_item = ret.detach()
                 detached_item.requires_grad = True
@@ -36,8 +39,8 @@ class LazyDict(Mapping):
             ret = ret[start:end]
         return ret
     
-    def __setitem__(self, key, func):
-        self._raw_dict.update({key: func})
+    def __setitem__(self, key, item):
+        self._raw_dict.update({key: item})
     
     def __delattr__(self, item):
         self._raw_dict.__delitem__(item)
@@ -54,7 +57,7 @@ class LazyDict(Mapping):
     def update(self, m):
         for k, v in m.items():
             self[k] = v
-            
+    
     def select_batch(self, start, end, detach=False):
         """Let the lazy dict return only the batches in the selected range.
         """
@@ -68,3 +71,11 @@ class LazyDict(Mapping):
     
     def get_detached_items(self):
         return self._detach_map
+
+
+class LazyTensorMap(TensorMap):
+    """Lazily evaluated map
+    """
+    
+    def get_raw_item(self, item):
+        return self._raw_dict.get(item)(item)

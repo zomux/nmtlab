@@ -90,16 +90,15 @@ class Transformer(EncoderDecoderModel):
         }
         return encoder_outputs
     
-    def compute_loss(self, logits, tgt_seq, tgt_mask):
+    def compute_loss(self, logits, tgt_seq, tgt_mask, denominator=None):
         B, T, _ = logits.shape
         logits = F.log_softmax(logits, dim=2)
         flat_logits = logits.contiguous().view(B * T, self._tgt_vocab_size)
         flat_targets = tgt_seq[:, 1:].contiguous().view(B * T)
         flat_mask = tgt_mask[:, 1:].contiguous().view(B * T)
-        loss = self.label_smooth(flat_logits, flat_targets) / flat_mask.sum()
-        word_acc = (flat_logits.argmax(1).eq(flat_targets).float() * flat_mask).view(B, T).sum(1) / tgt_mask[:, 1:].sum(1).float()
-        word_acc = word_acc.mean()
-        self.monitor("word_acc", word_acc)
+        if denominator is None:
+            denominator = flat_mask.sum()
+        loss = self.label_smooth(flat_logits, flat_targets) / denominator
         return loss
     
     def lookup_feedback(self, feedback):

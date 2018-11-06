@@ -10,8 +10,8 @@ import unittest
 class LazyDictTest(unittest.TestCase):
     
     def test_lazydict(self):
-        from nmtlab.utils.lazydict import LazyDict
-        ldict = LazyDict()
+        from nmtlab.utils.tensormap import LazyTensorMap
+        ldict = LazyTensorMap()
         k = 2
         ldict["item"] = lambda name: k + 3
         retrieved_item = ldict.item

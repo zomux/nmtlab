@@ -16,7 +16,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-from nmtlab.utils import MapDict, LazyDict
+from nmtlab.utils import MapDict, LazyTensorMap, TensorMap
 from nmtlab.utils import OPTS
 
 
@@ -113,7 +113,7 @@ class EncoderDecoderModel(nn.Module):
         if not self._stepwise_training and not sampling:
             states.feedback_embed = self.lookup_feedback(context.feedbacks)
             self.decode_step(context, states, full_sequence=True)
-            return states
+            return TensorMap(states)
         else:
             T = context.feedbacks.shape[1]
             state_stack = []
@@ -137,7 +137,7 @@ class EncoderDecoderModel(nn.Module):
             return self.combine_states(state_stack)
 
     def combine_states(self, state_stack):
-        lazydict = LazyDict()
+        lazydict = LazyTensorMap()
         for state_name in state_stack[0]:
             tensor = state_stack[0][state_name]
             if hasattr(tensor, "shape") and len(tensor.shape) >= 2:
@@ -212,10 +212,10 @@ class EncoderDecoderModel(nn.Module):
         encoder_outputs = MapDict(self.encode(src_seq, src_mask))
         context, states = self.pre_decode(encoder_outputs, tgt_seq, src_mask=src_mask, tgt_mask=tgt_mask)
         decoder_outputs = self.decode(context, states)
-        logits = self.expand(decoder_outputs)
         if OPTS.shard:
             self.compute_shard_loss(decoder_outputs, tgt_seq, tgt_mask)
         else:
+            logits = self.expand(decoder_outputs)
             loss = self.compute_loss(logits, tgt_seq, tgt_mask)
             acc = self.compute_word_accuracy(logits, tgt_seq, tgt_mask)
             self.monitor("loss", loss)
@@ -234,13 +234,17 @@ class EncoderDecoderModel(nn.Module):
         return word_acc.mean()
     
     def compute_shard_loss(self, decoder_outputs, tgt_seq, tgt_mask):
-        assert isinstance(decoder_outputs, LazyDict)
+        assert isinstance(decoder_outputs, TensorMap)
         B = tgt_seq.shape[0]
         score_map = defaultdict(list)
         denom = tgt_mask.sum()
         # Compute loss for each shard
         # The computation is performed on detached decoder states
         # Backpropagate the gradients to the deocder states
+        hook_map = {}
+        for p in self.expander_nn.parameters():
+            hook_map[p] = p._backward_hooks
+            p._backward_hooks = []
         for i in range(0, B, 2):
             decoder_outputs.select_batch(i, i + 2, detach=True)
             logits = self.expand(decoder_outputs)
@@ -249,11 +253,13 @@ class EncoderDecoderModel(nn.Module):
             score_map["loss"].append(loss)
             score_map["word_acc"].append(word_acc)
             loss.backward()
+        for p in hook_map:
+            p._backward_hooks = hook_map[p]
         # Monitor scores
         for k in score_map:
             self.monitor(k, sum(score_map[k]) / len(score_map[k]))
         # Backpropagate the gradients to all the parameters
-        detached_items = decoder_outputs.get_detached_items()
+        detached_items = list(decoder_outputs.get_detached_items().values())
         state_tensors = [x[1] for x in detached_items]
         grads = [x[0].grad for x in detached_items]
         torch.autograd.backward(state_tensors, grads)
