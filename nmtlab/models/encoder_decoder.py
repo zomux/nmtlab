@@ -207,6 +207,7 @@ class EncoderDecoderModel(nn.Module):
         """
         Forward to compute the loss.
         """
+        sampling = False
         src_mask = torch.ne(src_seq, 0).float()
         tgt_mask = torch.ne(tgt_seq, 0).float()
         encoder_outputs = MapDict(self.encode(src_seq, src_mask))
@@ -235,34 +236,38 @@ class EncoderDecoderModel(nn.Module):
     
     def compute_shard_loss(self, decoder_outputs, tgt_seq, tgt_mask):
         assert isinstance(decoder_outputs, TensorMap)
+        is_grad_enabled = torch.is_grad_enabled()
         B = tgt_seq.shape[0]
         score_map = defaultdict(list)
         denom = tgt_mask.sum()
         # Compute loss for each shard
         # The computation is performed on detached decoder states
         # Backpropagate the gradients to the deocder states
-        hook_map = {}
-        for p in self.expander_nn.parameters():
-            hook_map[p] = p._backward_hooks
-            p._backward_hooks = []
-        for i in range(0, B, 2):
-            decoder_outputs.select_batch(i, i + 2, detach=True)
+        shard_size = 2
+        OPTS.disable_backward_hooks = True
+        for i in range(0, B, shard_size):
+            j = i + shard_size
+            decoder_outputs.select_batch(i, j, detach=True)
             logits = self.expand(decoder_outputs)
-            loss = self.compute_loss(logits, tgt_seq[i:i+2], tgt_mask[i:i+2], denominator=denom)
-            word_acc = self.compute_word_accuracy(logits, tgt_seq[i:i+2], tgt_mask[i:i+2])
-            score_map["loss"].append(loss)
+            loss = self.compute_loss(logits, tgt_seq[i:j], tgt_mask[i:j], denominator=denom)
+            word_acc = self.compute_word_accuracy(logits, tgt_seq[i:j], tgt_mask[i:j])
+            score_map["loss"].append(loss * B / shard_size)
             score_map["word_acc"].append(word_acc)
-            loss.backward()
-        for p in hook_map:
-            p._backward_hooks = hook_map[p]
+            if i >= B - shard_size:
+                # Enable the backward hooks to gather the gradients
+                OPTS.disable_backward_hooks = False
+            if is_grad_enabled:
+                loss.backward()
+        OPTS.disable_backward_hooks = False
         # Monitor scores
         for k in score_map:
             self.monitor(k, sum(score_map[k]) / len(score_map[k]))
         # Backpropagate the gradients to all the parameters
-        detached_items = list(decoder_outputs.get_detached_items().values())
-        state_tensors = [x[1] for x in detached_items]
-        grads = [x[0].grad for x in detached_items]
-        torch.autograd.backward(state_tensors, grads)
+        if is_grad_enabled:
+            detached_items = list(decoder_outputs.get_detached_items().values())
+            state_tensors = [x[1] for x in detached_items]
+            grads = [x[0].grad for x in detached_items]
+            torch.autograd.backward(state_tensors, grads)
 
     def load(self, path):
         state_dict = torch.load(path)

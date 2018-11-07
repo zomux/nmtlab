@@ -16,6 +16,7 @@ class MTTrainer(TrainerKit):
     def run(self):
         """Run the training from begining to end.
         """
+        self.valid(force=True)
         self._model.train(True)
         for epoch in xrange(MAX_EPOCH):
             self.begin_epoch(epoch)

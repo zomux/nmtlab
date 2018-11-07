@@ -18,6 +18,7 @@ from torch.autograd import Variable
 
 from nmtlab.models import EncoderDecoderModel
 from nmtlab.utils import smoothed_bleu
+from nmtlab.trainers.distributed_optim import FlexibleDistributedOptimizer
 from nmtlab.dataset import MTDataset
 from nmtlab.schedulers import Scheduler
 from nmtlab.utils import OPTS
@@ -57,7 +58,7 @@ class TrainerKit(object):
             # Pin GPU to be used to process local rank (one GPU per process)
             torch.cuda.set_device(hvd.local_rank())
             self._model.cuda()
-            self._optimizer = hvd.DistributedOptimizer(optimizer, named_parameters=self._model.named_parameters())
+            self._optimizer = FlexibleDistributedOptimizer(optimizer, named_parameters=self._model.named_parameters())
             hvd.broadcast_parameters(self._model.state_dict(), root_rank=ROOT_RANK)
             # Set the scope of training data
             self._dataset.set_gpu_scope(hvd.rank(), hvd.size())
@@ -109,7 +110,7 @@ class TrainerKit(object):
     def train(self, batch):
         """Run one forward and backward step with given batch.
         """
-        # self._optimizer.zero_grad()
+        self._optimizer.zero_grad()
         # self._optimizer.step()
         if isinstance(self._dataset, MTDataset):
             src_seq = Variable(batch.src.transpose(0, 1))
@@ -121,25 +122,23 @@ class TrainerKit(object):
             vars = [var.cuda() for var in vars]
         val_map = self._model(*vars)
         if not OPTS.shard:
-            self._optimizer.zero_grad()
             val_map["loss"].backward()
         if self._clip_norm > 0:
-            # print([p.grad.data.norm() for p in self._model.parameters()])
             if self._multigpu:
                 self._optimizer.synchronize()
             torch.nn.utils.clip_grad_norm_(self._model.parameters(), self._clip_norm)
             # self._clip_grad_norm()
-            # print([p.grad.data.norm() for p in self._model.parameters()])
         self._optimizer.step()
         self.print_progress(val_map)
         self.record_train_scores(val_map)
         self._global_step += 1
         return val_map
     
-    def valid(self):
+    def valid(self, force=False):
         """Validate the model every few steps.
         """
-        if (self._current_step + 1) % self._valid_freq == 0 and self._is_root_node():
+        valid_condition = (self._current_step + 1) % self._valid_freq == 0 or force
+        if valid_condition and self._is_root_node():
             import horovod.torch as hvd
             hvd.init()
             self._model.train(False)
@@ -152,7 +151,7 @@ class TrainerKit(object):
                 self._current_epoch + 1, self._global_step + 1
             ))
         # Check new trainer settings
-        if (self._current_step + 1) % self._valid_freq == 0 and self._multigpu:
+        if valid_condition and self._multigpu:
             self.synchronize_learning_rate()
         if (self._current_step + 1) % 50 == 0 and self._multigpu:
             from nmtlab.trainers.hvd_utils import broadcast_optimizer_state
