@@ -18,6 +18,7 @@ from torch.autograd import Variable
 
 from nmtlab.utils import MapDict, LazyTensorMap, TensorMap
 from nmtlab.utils import OPTS
+from tensorboardX import SummaryWriter
 
 
 class EncoderDecoderModel(nn.Module):
@@ -28,12 +29,14 @@ class EncoderDecoderModel(nn.Module):
                  src_vocab_size=None, tgt_vocab_size=None,
                  dataset=None,
                  state_names=None, state_sizes=None,
+                 shard_size=32,
                  label_uncertainty=0):
         super(EncoderDecoderModel, self).__init__()
         if dataset is None and (src_vocab_size is None or tgt_vocab_size is None):
             raise SystemError("src_vocab_size and tgt_vocab_size must be specified.")
         self.hidden_size = hidden_size
         self.embed_size = embed_size
+        self._shard_size = shard_size
         self._stepwise_training = True
         self._label_uncertainty = label_uncertainty
         if dataset is not None:
@@ -60,8 +63,6 @@ class EncoderDecoderModel(nn.Module):
             shape = param.shape
             if len(shape) > 1:
                 nn.init.xavier_uniform_(param)
-                # scale = np.sqrt(6. / sum(get_fans(shape)))
-                # param.data.uniform_(- scale, scale)
         for module in self.modules():
             if isinstance(module, nn.Linear):
                 nn.init.constant_(module.bias, 0.0)
@@ -193,9 +194,6 @@ class EncoderDecoderModel(nn.Module):
             loss = loss.sum() / tgt_mask[:, 1:].sum().float()
         else:
             loss = loss.sum() / denominator
-        # word_acc = (flat_logits.argmax(1).eq(flat_targets).float() * flat_mask).view(B, T).sum(1) / tgt_mask[:, 1:].sum(1).float()
-        # word_acc = word_acc.mean()
-        # self.monitor("word_acc", word_acc)
         return loss
     
     def monitor(self, key, value):
@@ -204,8 +202,7 @@ class EncoderDecoderModel(nn.Module):
         self._monitors[key] = value
     
     def forward(self, src_seq, tgt_seq, sampling=False):
-        """
-        Forward to compute the loss.
+        """Forward to compute the loss.
         """
         sampling = False
         src_mask = torch.ne(src_seq, 0).float()
@@ -213,7 +210,7 @@ class EncoderDecoderModel(nn.Module):
         encoder_outputs = MapDict(self.encode(src_seq, src_mask))
         context, states = self.pre_decode(encoder_outputs, tgt_seq, src_mask=src_mask, tgt_mask=tgt_mask)
         decoder_outputs = self.decode(context, states)
-        if OPTS.shard:
+        if self._shard_size is not None and self._shard_size > 0:
             self.compute_shard_loss(decoder_outputs, tgt_seq, tgt_mask)
         else:
             logits = self.expand(decoder_outputs)
@@ -227,33 +224,35 @@ class EncoderDecoderModel(nn.Module):
             self.monitor("sampled_tokens", sample_outputs.prev_token)
         return self._monitors
     
-    def compute_word_accuracy(self, logits, tgt_seq, tgt_mask):
+    def compute_word_accuracy(self, logits, tgt_seq, tgt_mask, denominator=None):
+        """Compute per-word accuracy."""
         preds = logits.argmax(2)
         tgt_seq = tgt_seq[:, 1:]
         tgt_mask = tgt_mask[:, 1:]
-        word_acc = (preds.eq(tgt_seq).float() * tgt_mask).sum(1) / tgt_mask.sum(1).float()
-        return word_acc.mean()
+        if denominator is None:
+            denominator = tgt_mask.sum().float()
+        word_acc = (preds.eq(tgt_seq).float() * tgt_mask).sum() / denominator
+        return word_acc
     
     def compute_shard_loss(self, decoder_outputs, tgt_seq, tgt_mask):
         assert isinstance(decoder_outputs, TensorMap)
         is_grad_enabled = torch.is_grad_enabled()
         B = tgt_seq.shape[0]
         score_map = defaultdict(list)
-        denom = tgt_mask.sum()
+        denom = tgt_mask[:, 1:].sum()
         # Compute loss for each shard
         # The computation is performed on detached decoder states
         # Backpropagate the gradients to the deocder states
-        shard_size = 2
         OPTS.disable_backward_hooks = True
-        for i in range(0, B, shard_size):
-            j = i + shard_size
+        for i in range(0, B, self._shard_size):
+            j = i + self._shard_size
             decoder_outputs.select_batch(i, j, detach=True)
             logits = self.expand(decoder_outputs)
             loss = self.compute_loss(logits, tgt_seq[i:j], tgt_mask[i:j], denominator=denom)
-            word_acc = self.compute_word_accuracy(logits, tgt_seq[i:j], tgt_mask[i:j])
-            score_map["loss"].append(loss * B / shard_size)
+            word_acc = self.compute_word_accuracy(logits, tgt_seq[i:j], tgt_mask[i:j], denominator=denom)
+            score_map["loss"].append(loss)
             score_map["word_acc"].append(word_acc)
-            if i >= B - shard_size:
+            if i >= B - self._shard_size:
                 # Enable the backward hooks to gather the gradients
                 OPTS.disable_backward_hooks = False
             if is_grad_enabled:
@@ -261,7 +260,7 @@ class EncoderDecoderModel(nn.Module):
         OPTS.disable_backward_hooks = False
         # Monitor scores
         for k in score_map:
-            self.monitor(k, sum(score_map[k]) / len(score_map[k]))
+            self.monitor(k, sum(score_map[k]))
         # Backpropagate the gradients to all the parameters
         if is_grad_enabled:
             detached_items = list(decoder_outputs.get_detached_items().values())
@@ -270,7 +269,7 @@ class EncoderDecoderModel(nn.Module):
             torch.autograd.backward(state_tensors, grads)
 
     def load(self, path):
-        state_dict = torch.load(path)
+        state_dict = torch.load(path, map_location=lambda storage, loc: storage)
         if "model_state" in state_dict:
             state_dict = state_dict["model_state"]
         self.load_state_dict(state_dict)

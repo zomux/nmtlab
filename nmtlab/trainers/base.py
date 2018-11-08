@@ -110,12 +110,15 @@ class TrainerKit(object):
     def train(self, batch):
         """Run one forward and backward step with given batch.
         """
+        # import horovod.torch as hvd
         self._optimizer.zero_grad()
         # self._optimizer.step()
         if isinstance(self._dataset, MTDataset):
             src_seq = Variable(batch.src.transpose(0, 1))
             tgt_seq = Variable(batch.tgt.transpose(0, 1))
             vars = [src_seq, tgt_seq]
+            # sys.stdout.write("batsz {} {}\n".format(hvd.local_rank(), int(src_seq.shape[0])))
+            # sys.stdout.flush()
         else:
             vars = [Variable(torch.tensor(x.astype("int64"))) for x in batch]
         if self._cuda_avaiable:

@@ -7,6 +7,9 @@ from __future__ import print_function
 
 from abc import ABCMeta, abstractmethod
 
+import sys
+import os
+
 import torch
 import torch.nn.functional as F
 
@@ -19,10 +22,20 @@ class BeamSearchKit(object):
     
     __metaclass__ = ABCMeta
     
-    def __init__(self, model, source_vocab, target_vocab, start_token="<s>", end_token="</s>", beam_size=5, opts=None):
+    def __init__(self, model, source_vocab, target_vocab, start_token="<s>", end_token="</s>", beam_size=5, opts=None, device=None):
         assert isinstance(model, EncoderDecoderModel)
+        # Iniliatize horovod for multigpu translate
+        self._is_multigpu = False
+        try:
+            import horovod.torch as hvd
+            hvd.init()
+            if torch.cuda.is_available():
+                torch.cuda.set_device(hvd.local_rank())
+                self._is_multigpu = True
+        except ImportError:
+            pass
         if torch.cuda.is_available():
-            model.cuda()
+            model.cuda(device)
         self.model = model
         self.source_vocab = source_vocab
         self.target_vocab = target_vocab
@@ -225,3 +238,68 @@ class BeamSearchKit(object):
     def beam_search(self, input_tokens):
         """An abstract beam search method to be implement.
         """
+    
+    def load(self, model_path):
+        """Load NMT model.
+        """
+        self.model.load(model_path)
+    
+    def batch_translate(self, input_path, output_path, remove_subword_tokens=True):
+        """Translate a file."""
+        # Check whether using multiple GPUs
+        try:
+            import horovod.torch as hvd
+        except ImportError:
+            pass
+        # If using multigpu, then separate the input file
+        if self._is_multigpu:
+            sync_tensor = torch.tensor(0)
+            tmp_output_path = "/tmp/{}.{}".format(os.path.basename(output_path), hvd.local_rank())
+        else:
+            sync_tensor = None
+            tmp_output_path = output_path
+        fout = open(tmp_output_path, "w")
+        test_lines = list(open(input_path))
+        err = 0
+        for i, line in enumerate(test_lines):
+            # Gather error counts in multigpu mode
+            if self._is_multigpu:
+                if i % (10 * hvd.size()) == 0:
+                    sync_tensor.fill_(err)
+                    hvd.allreduce_(sync_tensor, average=False)
+                if i % hvd.size() != hvd.local_rank():
+                    continue
+            # Translate
+            src_sent, _ = line.strip().split("\t")
+            result, _ = self.translate("<s> {} </s>".format(src_sent), greedy=self.beam_size == 1)
+            if result is None:
+                result = ""
+            if remove_subword_tokens:
+                result = result.replace("@@ ", "")
+            if not result:
+                err += 1
+            # Write the results and print progress
+            fout.write("{}\t{}\n".format(i, result))
+            fout.flush()
+            if self._is_multigpu and hvd.local_rank() == 0:
+                sys.stdout.write("translating: {:.0f}%  err: {}    \r".format(float(i + 1) * 100 / len(test_lines),
+                                                                              int(sync_tensor)))
+            elif not self._is_multigpu:
+                sys.stdout.write("translating: {:.0f}%  err: {}    \r".format(float(i + 1) * 100 / len(test_lines), err))
+            sys.stdout.flush()
+        sys.stdout.write("\n")
+        fout.close()
+        if self._is_multigpu:
+            # Wait for all process to end
+            hvd.allreduce_(sync_tensor, average=False)
+            # Concatenate all separated translation results
+            if hvd.local_rank() == 0:
+                results = []
+                for i in range(hvd.size()):
+                    for line in open("/tmp/{}.{}".format(os.path.basename(output_path), i)):
+                        id, result = line.strip("\n").split("\t")
+                        results.append((int(id), result))
+                results.sort()
+                with open(output_path, "w") as fout:
+                    for _, result in results:
+                        fout.write(result + "\n")
