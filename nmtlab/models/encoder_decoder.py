@@ -18,7 +18,6 @@ from torch.autograd import Variable
 
 from nmtlab.utils import MapDict, LazyTensorMap, TensorMap
 from nmtlab.utils import OPTS
-from tensorboardX import SummaryWriter
 
 
 class EncoderDecoderModel(nn.Module):

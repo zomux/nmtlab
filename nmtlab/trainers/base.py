@@ -78,6 +78,8 @@ class TrainerKit(object):
         self._global_step = 0
         self._train_scores = defaultdict(float)
         self._train_count = 0
+        self._summary_writer = None
+        self._tensorboard_namespace = None
         # Print information
         self.log("nmtlab", "Training {} with {} parameters".format(
             self._model.__class__.__name__, len(list(self._model.named_parameters()))
@@ -92,15 +94,21 @@ class TrainerKit(object):
             hvd.size() if multigpu else 1, device_name
         ))
     
-    def configure(self, save_path=None, clip_norm=0, n_valid_per_epoch=10, criteria="bleu"):
+    def configure(self, save_path=None, clip_norm=0, n_valid_per_epoch=10, criteria="bleu", tensorboard_logdir=None, tensorboard_namespace=None):
         """Configure the hyperparameters of the trainer.
         """
         self._save_path = save_path
         self._clip_norm = clip_norm
         self._n_valid_per_epoch = n_valid_per_epoch
         self._criteria = criteria
-        self._valid_freq = int(self._n_train_batch / self._n_valid_per_epoch)
         assert self._criteria in ("bleu", "loss", "mix")
+        self._valid_freq = int(self._n_train_batch / self._n_valid_per_epoch)
+        if tensorboard_logdir is not None:
+            from tensorboardX import SummaryWriter
+            if tensorboard_namespace is None:
+                tensorboard_namespace = "nmtlab"
+            self._summary_writer = SummaryWriter(log_dir=tensorboard_logdir, comment=tensorboard_namespace)
+            self._tensorboard_namespace = tensorboard_namespace
     
     @abstractmethod
     def run(self):
@@ -142,8 +150,6 @@ class TrainerKit(object):
         """
         valid_condition = (self._current_step + 1) % self._valid_freq == 0 or force
         if valid_condition and self._is_root_node():
-            import horovod.torch as hvd
-            hvd.init()
             self._model.train(False)
             score_map = self.run_valid()
             is_improved = self.check_improvement(score_map)
@@ -157,6 +163,8 @@ class TrainerKit(object):
         if valid_condition and self._multigpu:
             self.synchronize_learning_rate()
         if (self._current_step + 1) % 50 == 0 and self._multigpu:
+            import horovod.torch as hvd
+            hvd.init()
             from nmtlab.trainers.hvd_utils import broadcast_optimizer_state
             import horovod.torch as hvd
             broadcast_optimizer_state(self._optimizer, ROOT_RANK)
@@ -189,7 +197,10 @@ class TrainerKit(object):
                 if v is not None:
                     score_map[k].append(v)
         for key, vals in score_map.items():
-            score_map[key] = np.mean(vals)
+            val = np.mean(vals)
+            score_map[key] = val
+            if self._summary_writer is not None:
+                self._summary_writer.add_scalar("{}/valid_{}".format(self._tensorboard_namespace, key), val, self._global_step)
         return score_map
     
     def check_improvement(self, score_map):
@@ -251,6 +262,8 @@ class TrainerKit(object):
     
     def is_finished(self):
         is_finished = self._scheduler.is_finished()
+        if is_finished:
+            self._summary_writer.close()
         if self._multigpu:
             import horovod.torch as hvd
             flag_tensor = torch.tensor(1 if is_finished else 0)
