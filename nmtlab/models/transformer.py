@@ -91,6 +91,8 @@ class Transformer(EncoderDecoderModel):
         return encoder_outputs
     
     def compute_loss(self, logits, tgt_seq, tgt_mask, denominator=None):
+        if self._label_uncertainty > 0:
+            return super(Transformer, self).compute_loss(logits, tgt_seq, tgt_mask, denominator)
         B, T, _ = logits.shape
         logits = F.log_softmax(logits, dim=2)
         flat_logits = logits.contiguous().view(B * T, self._tgt_vocab_size)

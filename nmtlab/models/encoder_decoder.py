@@ -179,7 +179,7 @@ class EncoderDecoderModel(nn.Module):
         """
     
     def compute_loss(self, logits, tgt_seq, tgt_mask, denominator=None):
-        if self._label_uncertainty > 0 and self.training:
+        if self._label_uncertainty > 0 and self.training and not OPTS.marginloss:
             uniform_seq = tgt_seq.float().uniform_(0, self._tgt_vocab_size)
             smooth_mask = tgt_seq.float().bernoulli_(self._label_uncertainty)
             tgt_seq = (1 - smooth_mask) * tgt_seq.float() + smooth_mask * uniform_seq
@@ -189,6 +189,13 @@ class EncoderDecoderModel(nn.Module):
         flat_logits = logits.contiguous().view(B * T, self._tgt_vocab_size)
         flat_targets = tgt_seq[:, 1:].contiguous().view(B * T)
         loss = nn.NLLLoss(ignore_index=0, reduce=False).forward(flat_logits, flat_targets)
+        if OPTS.marginloss:
+            # neg = logits.topk(10, dim=2, sorted=False)[0]
+            neg = logits
+            pos = -loss.view(B, T)
+            margin = 0.5
+            loss = (- (pos.unsqueeze(-1) - neg) + margin).sum(-1)
+            loss *= (loss > 0).float() * tgt_mask[:, 1:]
         if denominator is None:
             loss = loss.sum() / tgt_mask[:, 1:].sum().float()
         else:
