@@ -96,7 +96,10 @@ class TemporalMasking(nn.Module):
         Args:
             x - embedding ~ (batch, len, size)
         """
-        seq_len = x.shape[-2]
+        if type(x) == int:
+            seq_len = x
+        else:
+            seq_len = x.shape[-2]
         return self.mask[:, :seq_len, :seq_len]
         
 
@@ -123,7 +126,11 @@ class PositionalEmbedding(nn.Module):
         """
         if start is None:
             start = 0
-        return Variable(self.pe[:, start:start + x.shape[1]], requires_grad=False)
+        if type(x) == int:
+            length = x
+        else:
+            length = x.shape[1]
+        return Variable(self.pe[:, start:start + length], requires_grad=False)
 
 
 class TransformerFeedForward(nn.Module):

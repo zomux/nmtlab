@@ -14,7 +14,7 @@ import torch
 import torch.nn.functional as F
 
 from nmtlab.models import EncoderDecoderModel
-from nmtlab.utils import MapDict
+from nmtlab.utils import MapDict, is_root_node
 import copy
 
 
@@ -287,7 +287,8 @@ class BeamSearchKit(object):
             elif not self._is_multigpu:
                 sys.stdout.write("translating: {:.0f}%  err: {}    \r".format(float(i + 1) * 100 / len(test_lines), err))
             sys.stdout.flush()
-        sys.stdout.write("\n")
+        if is_root_node():
+            sys.stdout.write("\n")
         fout.close()
         if self._is_multigpu:
             # Wait for all process to end

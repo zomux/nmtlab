@@ -168,8 +168,8 @@ class EncoderDecoderModel(nn.Module):
         if extra_states is not None:
             extra_states.update(extra_states)
         # Process mask
-        if src_mask is not None:
-            context["src_mask"] = src_mask
+        context["src_mask"] = src_mask
+        context["tgt_mask"] = tgt_mask
         return context, states
         
     @abstractmethod
@@ -190,12 +190,8 @@ class EncoderDecoderModel(nn.Module):
         flat_targets = tgt_seq[:, 1:].contiguous().view(B * T)
         loss = nn.NLLLoss(ignore_index=0, reduce=False).forward(flat_logits, flat_targets)
         if OPTS.marginloss:
-            # neg = logits.topk(10, dim=2, sorted=False)[0]
-            neg = logits
-            pos = -loss.view(B, T)
-            margin = 0.5
-            loss = (- (pos.unsqueeze(-1) - neg) + margin).sum(-1)
-            loss *= (loss > 0).float() * tgt_mask[:, 1:]
+            correct_mask = (flat_logits.argmax(1) == flat_targets).float()
+            loss = (1 - correct_mask) * loss
         if denominator is None:
             loss = loss.sum() / tgt_mask[:, 1:].sum().float()
         else:
@@ -240,12 +236,15 @@ class EncoderDecoderModel(nn.Module):
         word_acc = (preds.eq(tgt_seq).float() * tgt_mask).sum() / denominator
         return word_acc
     
-    def compute_shard_loss(self, decoder_outputs, tgt_seq, tgt_mask):
+    def compute_shard_loss(self, decoder_outputs, tgt_seq, tgt_mask, denominator=None):
         assert isinstance(decoder_outputs, TensorMap)
         is_grad_enabled = torch.is_grad_enabled()
         B = tgt_seq.shape[0]
         score_map = defaultdict(list)
-        denom = tgt_mask[:, 1:].sum()
+        if denominator is None:
+            denom = tgt_mask[:, 1:].sum()
+        else:
+            denom = denominator
         # Compute loss for each shard
         # The computation is performed on detached decoder states
         # Backpropagate the gradients to the deocder states

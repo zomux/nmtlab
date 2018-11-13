@@ -107,6 +107,7 @@ class TrainerKit(object):
             from tensorboardX import SummaryWriter
             if tensorboard_namespace is None:
                 tensorboard_namespace = "nmtlab"
+            tensorboard_namespace = tensorboard_namespace.replace(".", "_")
             self._summary_writer = SummaryWriter(log_dir=tensorboard_logdir, comment=tensorboard_namespace)
             self._tensorboard_namespace = tensorboard_namespace
     
