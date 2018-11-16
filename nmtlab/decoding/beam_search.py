@@ -270,7 +270,7 @@ class BeamSearchKit(object):
                 if i % hvd.size() != hvd.local_rank():
                     continue
             # Translate
-            src_sent, _ = line.strip().split("\t")
+            src_sent = line.strip().split("\t")
             result, _ = self.translate("<s> {} </s>".format(src_sent), greedy=self.beam_size == 1)
             if result is None:
                 result = ""
