@@ -103,7 +103,7 @@ class TrainerKit(object):
         self._criteria = criteria
         assert self._criteria in ("bleu", "loss", "mix")
         self._valid_freq = int(self._n_train_batch / self._n_valid_per_epoch)
-        if tensorboard_logdir is not None:
+        if tensorboard_logdir is not None and self._is_root_node():
             from tensorboardX import SummaryWriter
             if tensorboard_namespace is None:
                 tensorboard_namespace = "nmtlab"
@@ -263,7 +263,7 @@ class TrainerKit(object):
     
     def is_finished(self):
         is_finished = self._scheduler.is_finished()
-        if is_finished:
+        if is_finished and self._summary_writer is not None:
             self._summary_writer.close()
         if self._multigpu:
             import horovod.torch as hvd
