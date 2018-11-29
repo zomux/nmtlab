@@ -127,7 +127,6 @@ class Transformer(EncoderDecoderModel):
             x = states.embeddings.transpose(0, 1)
             for l, layer in enumerate(self.decoder_layers):
                 x = layer(context.encoder_states, x, last_only=True)  # ~ (batch, 1, size)
-                # print("a {}".format(l), x[1, 0, :2])
                 if states.t == 0:
                     states["layer{}".format(l)] = x.transpose(0, 1)
                 else:
