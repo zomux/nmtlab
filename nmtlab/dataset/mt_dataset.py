@@ -126,7 +126,10 @@ class MTDataset(Dataset):
             self._batch_size = self._batch_size / n_scopes
         
     def _len_filter(self, sample):
-        return len(sample.src) <= self._max_length and len(sample.tgt) <= self._max_length
+        return (
+            len(sample.src) > 0 and len(sample.tgt) > 0 and
+            len(sample.src) <= self._max_length and len(sample.tgt) <= self._max_length
+        )
     
     def n_train_samples(self):
         return len(self._train_data.examples)
