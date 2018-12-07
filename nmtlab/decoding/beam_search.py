@@ -207,8 +207,8 @@ class BeamSearchKit(object):
         last_tokens = torch.tensor([h["tokens"][-1] for h in hyps])
         if torch.cuda.is_available():
             last_tokens = last_tokens.cuda()
-            states.prev_token = last_tokens.unsqueeze(0)
-            states.feedback_embed = self.model.lookup_feedback(last_tokens)
+        states.prev_token = last_tokens.unsqueeze(0)
+        states.feedback_embed = self.model.lookup_feedback(last_tokens)
         return states
 
     def encode(self, input_tokens):
