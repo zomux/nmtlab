@@ -18,7 +18,6 @@ from torch.autograd import Variable
 
 from nmtlab.models import EncoderDecoderModel
 from nmtlab.utils import smoothed_bleu
-from nmtlab.trainers.distributed_optim import FlexibleDistributedOptimizer
 from nmtlab.dataset import MTDataset
 from nmtlab.schedulers import Scheduler
 from nmtlab.utils import OPTS
@@ -53,6 +52,7 @@ class TrainerKit(object):
                 import horovod.torch as hvd
             except ImportError:
                 raise SystemError("nmtlab requires horovod to run multigpu training.")
+            from nmtlab.trainers.distributed_optim import FlexibleDistributedOptimizer
             # Initialize Horovod
             hvd.init()
             # Pin GPU to be used to process local rank (one GPU per process)
@@ -141,6 +141,7 @@ class TrainerKit(object):
             torch.nn.utils.clip_grad_norm_(self._model.parameters(), self._clip_norm)
             # self._clip_grad_norm()
         self._optimizer.step()
+        import pdb;pdb.set_trace()
         self.print_progress(val_map)
         self.record_train_scores(val_map)
         self._global_step += 1
