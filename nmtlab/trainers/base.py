@@ -141,7 +141,6 @@ class TrainerKit(object):
             torch.nn.utils.clip_grad_norm_(self._model.parameters(), self._clip_norm)
             # self._clip_grad_norm()
         self._optimizer.step()
-        import pdb;pdb.set_trace()
         self.print_progress(val_map)
         self.record_train_scores(val_map)
         self._global_step += 1

@@ -23,7 +23,6 @@ class LabelSmoothingKLDivLoss(nn.Module):
     and p_{prob. computed by model}(w) is minimized.
     """
     def __init__(self, label_smoothing, tgt_vocab_size, ignore_index=-100):
-        assert 0.0 < label_smoothing <= 1.0
         self.padding_idx = ignore_index
         super(LabelSmoothingKLDivLoss, self).__init__()
 

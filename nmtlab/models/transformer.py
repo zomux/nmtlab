@@ -48,7 +48,7 @@ class Transformer(EncoderDecoderModel):
     def prepare(self):
         from nmtlab.modules.transformer_modules import LabelSmoothingKLDivLoss
         self.label_smooth = LabelSmoothingKLDivLoss(0.1, self._tgt_vocab_size, 0)
-        self.label_smooth = LabelSmoothingKLDivLoss(0, self._tgt_vocab_size, 0)
+        self.label_smooth = LabelSmoothingKLDivLoss(0.0, self._tgt_vocab_size, 0)
         # Layer Norm
         self.encoder_norm = nn.LayerNorm(self.hidden_size)
         self.decoder_norm = nn.LayerNorm(self.hidden_size)
