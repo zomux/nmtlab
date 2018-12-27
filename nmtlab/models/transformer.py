@@ -48,12 +48,13 @@ class Transformer(EncoderDecoderModel):
     def prepare(self):
         from nmtlab.modules.transformer_modules import LabelSmoothingKLDivLoss
         self.label_smooth = LabelSmoothingKLDivLoss(0.1, self._tgt_vocab_size, 0)
+        self.label_smooth = LabelSmoothingKLDivLoss(0, self._tgt_vocab_size, 0)
         # Layer Norm
         self.encoder_norm = nn.LayerNorm(self.hidden_size)
         self.decoder_norm = nn.LayerNorm(self.hidden_size)
         # Shared embedding layer
-        self.src_embed_layer = TransformerEmbedding(self._src_vocab_size, self.embed_size)
-        self.tgt_embed_layer = TransformerEmbedding(self._tgt_vocab_size, self.embed_size)
+        self.src_embed_layer = TransformerEmbedding(self._src_vocab_size, self.embed_size, dropout_ratio=self._dropout_ratio)
+        self.tgt_embed_layer = TransformerEmbedding(self._tgt_vocab_size, self.embed_size, dropout_ratio=self._dropout_ratio)
         self.temporal_mask = TemporalMasking()
         # Encoder
         self.encoder_layers = nn.ModuleList()

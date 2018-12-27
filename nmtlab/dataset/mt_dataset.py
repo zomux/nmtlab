@@ -70,9 +70,9 @@ class MTDataset(Dataset):
             # Precompute the batches
             self._fixed_train_batches = self._make_fixed_batches(train_data, self._batch_size)
             self._fixed_valid_batches = self._make_fixed_batches(valid_data, self._batch_size)
-            
+
         super(MTDataset, self).__init__(train_data=train_data, valid_data=valid_data, batch_size=batch_size, batch_type=batch_type)
-        
+
     def use_valid_corpus(self, corpus_path=None, src_corpus=None, tgt_corpus=None):
         if corpus_path is not None:
             data = torchtext.data.TabularDataset(
@@ -144,7 +144,7 @@ class MTDataset(Dataset):
         kwargs = dict(
             dataset=self._train_data, batch_size=self._batch_size,
             sort=False, sort_within_batch=True,
-            shuffle=True,
+            shuffle=False,
             sort_key=lambda x: len(x.src),
             device=None, repeat=False)
         if self._batch_type == "token":
@@ -160,7 +160,7 @@ class MTDataset(Dataset):
         kwargs = dict(
             dataset=self._valid_data, batch_size=self._batch_size,
             sort=False, sort_within_batch=True,
-            shuffle=True,
+            shuffle=False,
             sort_key=lambda x: len(x.src),
             device=None, repeat=False)
         if self._batch_type == "token":
