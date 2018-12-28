@@ -29,7 +29,8 @@ class EncoderDecoderModel(nn.Module):
                  dataset=None,
                  state_names=None, state_sizes=None,
                  shard_size=32,
-                 label_uncertainty=0):
+                 label_uncertainty=0,
+                 seed=3):
         super(EncoderDecoderModel, self).__init__()
         if dataset is None and (src_vocab_size is None or tgt_vocab_size is None):
             raise SystemError("src_vocab_size and tgt_vocab_size must be specified.")
@@ -38,6 +39,8 @@ class EncoderDecoderModel(nn.Module):
         self._shard_size = shard_size
         self._stepwise_training = True
         self._label_uncertainty = label_uncertainty
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed(seed)
         if dataset is not None:
             self._src_vocab_size, self._tgt_vocab_size = dataset.vocab_sizes()
         else:
@@ -50,7 +53,7 @@ class EncoderDecoderModel(nn.Module):
         self._layers = []
         self.prepare()
         self.initialize_parameters()
-    
+
     def initialize_parameters(self):
         """Initialize the parameters in the model."""
         # Initialize weights
