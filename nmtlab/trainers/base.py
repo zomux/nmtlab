@@ -198,7 +198,7 @@ class TrainerKit(object):
                 if v is not None:
                     score_map[k].append(v)
         for key, vals in score_map.items():
-            val = np.mean(vals)
+            val = np.mean([v.cpu() for v in vals])
             score_map[key] = val
             if self._summary_writer is not None:
                 self._summary_writer.add_scalar("{}/valid_{}".format(self._tensorboard_namespace, key), val, self._global_step)
