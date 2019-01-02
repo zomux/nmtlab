@@ -89,6 +89,8 @@ class Transformer(EncoderDecoderModel):
             "encoder_states": encoder_states,
             "src_mask": src_mask
         }
+        print("encoder_states")
+        print(encoder_states.sum())
         return encoder_outputs
     
     def compute_loss(self, logits, tgt_seq, tgt_mask, denominator=None):
