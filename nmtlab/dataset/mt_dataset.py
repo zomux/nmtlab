@@ -144,7 +144,7 @@ class MTDataset(Dataset):
         kwargs = dict(
             dataset=self._train_data, batch_size=self._batch_size,
             sort=False, sort_within_batch=True,
-            shuffle=False,
+            shuffle=True,
             sort_key=lambda x: len(x.src),
             device=None, repeat=False)
         if self._batch_type == "token":

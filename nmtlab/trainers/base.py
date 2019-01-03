@@ -197,7 +197,6 @@ class TrainerKit(object):
             for k, v in val_map.items():
                 if v is not None:
                     score_map[k].append(v)
-        print(score_map["loss"])
         for key, vals in score_map.items():
             val = np.mean([v.cpu() for v in vals])
             score_map[key] = val
