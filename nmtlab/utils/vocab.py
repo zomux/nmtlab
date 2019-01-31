@@ -23,7 +23,13 @@ class Vocab(torchtext.vocab.Vocab):
     
     def size(self):
         return len(self.itos)
-    
+
+    def initialize(self, special_tokens=None):
+        if special_tokens is None:
+            special_tokens = DEFAULT_SPECIAL_TOKENS
+        self.itos = special_tokens
+        self._build_vocab_map()
+
     def build(self, txt_path, limit=None, special_tokens=None, char_level=False, field=None, delim="\t"):
         vocab_counter = Counter()
         for line in open(txt_path):
@@ -56,7 +62,7 @@ class Vocab(torchtext.vocab.Vocab):
     def add(self, token):
         if token not in self.stoi:
             self.itos.append(token)
-            self.stoi[token] = self._vocab.index(token)
+            self.stoi[token] = self.itos.index(token)
 
     def save(self, path):
         pickle.dump(self.itos, open(path, "wb"))
