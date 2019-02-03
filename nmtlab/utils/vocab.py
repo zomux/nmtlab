@@ -14,10 +14,13 @@ DEFAULT_SPECIAL_TOKENS = ["<null>", "<s>", "</s>", "UNK"]
 
 class Vocab(torchtext.vocab.Vocab):
     
-    def __init__(self, path=None, unk_token="UNK"):
+    def __init__(self, path=None, unk_token="UNK", picklable=False):
         self._unk_token = unk_token
         self.itos = []
-        self.stoi = defaultdict(lambda: 3)
+        if picklable:
+            self.stoi = {}
+        else:
+            self.stoi = defaultdict(lambda: 3)
         if path:
             self.load(path)
     
