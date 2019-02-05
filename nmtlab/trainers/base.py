@@ -129,9 +129,15 @@ class TrainerKit(object):
             # sys.stdout.write("batsz {} {}\n".format(hvd.local_rank(), int(src_seq.shape[0])))
             # sys.stdout.flush()
         else:
-            vars = [Variable(torch.tensor(x.astype("int64"))) for x in batch]
+            vars = []
+            for x in batch:
+                if type(x) == np.array:
+                    if "int" in str(x.dtype):
+                        x = x.astype("int64")
+                    x = Variable(torch.tensor(x))
+                vars.append(x)
         if self._cuda_avaiable:
-            vars = [var.cuda() for var in vars]
+            vars = [var.cuda() if isinstance(var, torch.Tensor) else var for var in vars]
         val_map = self._model(*vars)
         if not OPTS.shard:
             val_map["loss"].backward()
@@ -182,9 +188,15 @@ class TrainerKit(object):
                     tgt_seq = Variable(batch.tgt.transpose(0, 1))
                     vars = [src_seq, tgt_seq]
                 else:
-                    vars = [Variable(torch.tensor(x.astype("int64"))) for x in batch]
+                    vars = []
+                    for x in batch:
+                        if type(x) == np.array:
+                            if "int" in str(x.dtype):
+                                x = x.astype("int64")
+                            x = Variable(torch.tensor(x))
+                        vars.append(x)
                 if self._cuda_avaiable:
-                    vars = [var.cuda() for var in vars]
+                    vars = [var.cuda() if isinstance(var, torch.Tensor) else var for var in vars]
                 val_map = self._model(*vars, sampling=True)
             # Estimate BLEU
             if "sampled_tokens" in val_map and val_map["sampled_tokens"] is not None:
