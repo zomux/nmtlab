@@ -181,6 +181,7 @@ class TrainerKit(object):
         """Run the model on the validation set and report loss.
         """
         score_map = defaultdict(list)
+        # print("enter run valid")
         for batch in self._dataset.valid_set():
             with torch.no_grad():
                 if isinstance(self._dataset, MTDataset):
