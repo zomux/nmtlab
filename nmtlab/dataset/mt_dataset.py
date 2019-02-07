@@ -127,7 +127,7 @@ class MTDataset(Dataset):
         
     def _len_filter(self, sample):
         return (
-            len(sample.src) > 0 and len(sample.tgt) > 0 and
+            len(sample.src) > 2 and len(sample.tgt) > 2 and
             len(sample.src) <= self._max_length and len(sample.tgt) <= self._max_length
         )
     
