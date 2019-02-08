@@ -94,7 +94,7 @@ class TrainerKit(object):
             hvd.size() if multigpu else 1, device_name
         ))
     
-    def configure(self, save_path=None, clip_norm=0, n_valid_per_epoch=10, criteria="bleu", tensorboard_logdir=None, tensorboard_namespace=None):
+    def configure(self, save_path=None, clip_norm=0, n_valid_per_epoch=10, criteria="loss", tensorboard_logdir=None, tensorboard_namespace=None):
         """Configure the hyperparameters of the trainer.
         """
         self._save_path = save_path
