@@ -153,12 +153,12 @@ class TransformerFeedForward(nn.Module):
 
 class TransformerEncoderLayer(nn.Module):
     
-    def __init__(self, size, ff_size=None, n_att_head=8, dropout_ratio=0.1):
+    def __init__(self, size, ff_size=None, n_att_head=8, dropout_ratio=0.1, relative_pos=False):
         super(TransformerEncoderLayer, self).__init__()
         if ff_size is None:
             ff_size = size * 4
         self.dropout = nn.Dropout(dropout_ratio)
-        self.attention = MultiHeadAttention(size, n_att_head, dropout_ratio=dropout_ratio)
+        self.attention = MultiHeadAttention(size, n_att_head, dropout_ratio=dropout_ratio, relative_pos=relative_pos)
         self.ff_layer = TransformerFeedForward(size, ff_size, dropout_ratio=dropout_ratio)
         self.layer_norm1 = nn.LayerNorm(size)
         self.layer_norm2 = nn.LayerNorm(size)
@@ -179,13 +179,13 @@ class TransformerEncoderLayer(nn.Module):
 
 class TransformerDecoderLayer(nn.Module):
     
-    def __init__(self, size, ff_size=None, n_att_head=8, dropout_ratio=0.1):
+    def __init__(self, size, ff_size=None, n_att_head=8, dropout_ratio=0.1, relative_pos=False):
         super(TransformerDecoderLayer, self).__init__()
         if ff_size is None:
             ff_size = size * 4
         self.dropout = nn.Dropout(dropout_ratio)
-        self.attention = MultiHeadAttention(size, n_att_head, dropout_ratio=dropout_ratio)
-        self.cross_attention = MultiHeadAttention(size, n_att_head, dropout_ratio=dropout_ratio)
+        self.attention = MultiHeadAttention(size, n_att_head, dropout_ratio=dropout_ratio, relative_pos=relative_pos)
+        self.cross_attention = MultiHeadAttention(size, n_att_head, dropout_ratio=dropout_ratio, relative_pos=relative_pos)
         self.ff_layer = TransformerFeedForward(size, ff_size, dropout_ratio=dropout_ratio)
         self.layer_norm1 = nn.LayerNorm(size)
         self.layer_norm2 = nn.LayerNorm(size)
