@@ -151,6 +151,8 @@ class BeamSearchKit(object):
                     "old_state": hyp["state"]
                 }
                 new_hyp = self.fix_new_hyp(i, hyp, new_hyp)
+                if new_hyp is None:
+                    continue
                 # Keep old information
                 for key in hyp:
                     if key not in new_hyp:
