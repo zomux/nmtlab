@@ -15,15 +15,18 @@ class EvaluationKit(object):
 
     __metaclass__ = ABCMeta
     
-    def __init__(self, ref_path, ref_field=None, ref_delim="\t"):
-        self._ref_lines = []
-        self._ref_path = ref_path
-        for ref_line in map(str.strip, open(ref_path)):
-            if ref_field is not None:
-                fields = ref_line.split(ref_delim)
-                assert len(fields) > ref_field
-                ref_line = fields[ref_field]
-            self._ref_lines.append(ref_line)
+    def __init__(self, ref_path=None, ref_field=None, ref_delim="\t"):
+        if ref_field is None:
+            ref_field = 0
+        self.ref_lines = []
+        self.ref_path = ref_path
+        if ref_path is not None:
+            for ref_line in map(str.strip, open(ref_path)):
+                if ref_field is not None:
+                    fields = ref_line.split(ref_delim)
+                    assert len(fields) > ref_field
+                    ref_line = fields[ref_field]
+                self.ref_lines.append(ref_line)
         self.prepare()
     
     def prepare(self):
@@ -35,7 +38,7 @@ class EvaluationKit(object):
         """
         result_lines = list(map(str.strip, open(result_path)))
         scores = []
-        for result, ref in zip(result_lines, self._ref_lines):
+        for result, ref in zip(result_lines, self.ref_lines):
             scores.append(self.evaluate_line(result, ref))
         return np.mean(scores)
     

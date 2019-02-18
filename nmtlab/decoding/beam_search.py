@@ -278,7 +278,10 @@ class BeamSearchKit(object):
             if result is None:
                 result = ""
             if remove_subword_tokens:
-                result = result.replace("@@ ", "")
+                if "▁" in result:
+                    result = "".join(result.split()).replace("▁", " ").strip()
+                else:
+                    result = result.replace("@@ ", "")
             if not result:
                 err += 1
             # Write the results and print progress

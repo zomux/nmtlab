@@ -3,3 +3,4 @@ torchtext >= 0.2.3
 torch >= 0.4.0
 numpy >= 1.14.0
 tensorboardx >= 1.4
+sacrebleu >= 1.2.17
