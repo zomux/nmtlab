@@ -162,7 +162,7 @@ class TransformerEncoderLayer(nn.Module):
         self.ff_layer = TransformerFeedForward(size, ff_size, dropout_ratio=dropout_ratio)
         self.layer_norm1 = nn.LayerNorm(size)
         self.layer_norm2 = nn.LayerNorm(size)
-    
+
     def forward(self, x, src_mask=None):
         # Attention layer
         y1 = self.layer_norm1(x)
