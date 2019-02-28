@@ -19,7 +19,7 @@ class MosesBLEUEvaluator(EvaluationKit):
         
     def evaluate(self, result_path):
         cmd = ("{} {} < {}".format(self._script_path, self.ref_path, result_path))
-        print(cmd)
+        # print(cmd)
         pipe = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
         bleu = pipe.stdout.decode("utf-8").replace("BLEU", "").replace("=", "").split(",")[0].strip()
         return float(bleu)

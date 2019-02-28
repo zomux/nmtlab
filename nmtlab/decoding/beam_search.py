@@ -14,7 +14,7 @@ import torch
 import torch.nn.functional as F
 
 from nmtlab.models import EncoderDecoderModel
-from nmtlab.utils import MapDict, is_root_node
+from nmtlab.utils import MapDict, is_root_node, OPTS
 import copy
 
 
@@ -142,6 +142,15 @@ class BeamSearchKit(object):
                 new_hyp_state[sname] = new_states[sname][:, i, :].unsqueeze(1)
             new_scores = best_scores[i].cpu().detach().numpy().tolist()
             new_tokens = best_tokens[i].cpu().detach().numpy().tolist()
+            if OPTS.Tjiwei_diversity or OPTS.Tjiwei_diversity2 or OPTS.Tjiwei_diversity8:
+                if OPTS.Tjiwei_diversity:
+                    coef = 1.0
+                elif OPTS.Tjiwei_diversity2:
+                    coef = 0.5
+                elif OPTS.Tjiwei_diversity8:
+                    coef = 0.8
+                for kp in range(len(new_scores)):
+                    new_scores[kp] -= (kp + 1.) * coef
             for new_token, new_score in zip(new_tokens, new_scores):
                 new_hyp = {
                     "state": new_hyp_state,
