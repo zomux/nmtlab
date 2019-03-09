@@ -283,7 +283,7 @@ class BeamSearchKit(object):
             # Translate
             pair = line.strip().split("\t")
             src_sent = pair[field]
-            result, _ = self.translate("<s> {} </s>".format(src_sent), greedy=self.beam_size == 1)
+            result, _ = self.translate("<s> {} </s>".format(src_sent))
             if result is None:
                 result = ""
             if remove_subword_tokens:
