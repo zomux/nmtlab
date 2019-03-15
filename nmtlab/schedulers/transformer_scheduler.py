@@ -6,6 +6,7 @@ from __future__ import division
 from __future__ import print_function
 
 from nmtlab.schedulers.base import Scheduler
+import torch.nn as nn
 
 
 class TransformerScheduler(Scheduler):
@@ -22,7 +23,11 @@ class TransformerScheduler(Scheduler):
     
     def bind(self, trainer):
         super(TransformerScheduler, self).bind(trainer)
-        size = self._trainer.model().hidden_size
+        model = self._trainer.model()
+        if isinstance(model, nn.DataParallel):
+            size = model.module.hidden_size
+        else:
+            size = model.hidden_size
         self._devices = self._trainer.devices()
         self._size_factor = size ** -0.5
     

@@ -13,6 +13,7 @@ from abc import abstractmethod, ABCMeta
 
 import numpy as np
 import torch
+import torch.nn as nn
 from torch.optim.optimizer import Optimizer
 from torch.autograd import Variable
 
@@ -31,7 +32,7 @@ class TrainerKit(object):
     
     __metaclass__ = ABCMeta
     
-    def __init__(self, model, dataset, optimizer, scheduler=None, multigpu=False):
+    def __init__(self, model, dataset, optimizer, scheduler=None, multigpu=False, using_horovod=True):
         """Create a trainer.
         Args:
             model (EncoderDecoderModel): The model to train.
@@ -44,28 +45,13 @@ class TrainerKit(object):
         self._optimizer = optimizer
         self._scheduler = scheduler if scheduler is not None else Scheduler()
         self._multigpu = multigpu
+        self._horovod = using_horovod
         self._n_devices = 1
         self._cuda_avaiable = torch.cuda.is_available()
         # Setup horovod1i
-        if multigpu:
-            try:
-                import horovod.torch as hvd
-            except ImportError:
-                raise SystemError("nmtlab requires horovod to run multigpu training.")
-            from nmtlab.trainers.distributed_optim import FlexibleDistributedOptimizer
-            # Initialize Horovod
-            hvd.init()
-            # Pin GPU to be used to process local rank (one GPU per process)
-            torch.cuda.set_device(hvd.local_rank())
-            self._model.cuda()
-            self._optimizer = FlexibleDistributedOptimizer(optimizer, named_parameters=self._model.named_parameters())
-            hvd.broadcast_parameters(self._model.state_dict(), root_rank=ROOT_RANK)
-            # Set the scope of training data
-            self._dataset.set_gpu_scope(hvd.rank(), hvd.size())
-            self._n_devices = hvd.size()
-        elif torch.cuda.is_available():
-            self._model.cuda()
-            # Initialize common variables
+        self.register_model(model)
+        self._n_devices = self.device_count()
+        # Initialize common variables
         self._log_lines = []
         self._scheduler.bind(self)
         self._best_criteria = 65535
@@ -91,9 +77,52 @@ class TrainerKit(object):
         self._report_valid_data_hash()
         device_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
         self.log("nmtlab", "Running with {} GPUs ({})".format(
-            hvd.size() if multigpu else 1, device_name
+            self.device_count(), device_name
         ))
-    
+
+    def device_count(self):
+        if self._multigpu:
+            if self.using_horovod():
+                import horovod.torch as hvd
+                return hvd.size()
+            else:
+                return torch.cuda.device_count()
+        else:
+            return 1
+
+    def register_model(self, model=None):
+        """Register a model and send it to gpu(s).
+        """
+        if model is None:
+            model = self._model
+        if self._multigpu and self._horovod:
+            # Horovod based
+            try:
+                import horovod.torch as hvd
+            except ImportError:
+                raise SystemError("horovod is not working, try to set using_horovod=False.")
+            from nmtlab.trainers.distributed_optim import FlexibleDistributedOptimizer
+            # Initialize Horovod
+            hvd.init()
+            # Pin GPU to be used to process local rank (one GPU per process)
+            torch.cuda.set_device(hvd.local_rank())
+            self._model = model
+            self._model.cuda()
+            self._optimizer = FlexibleDistributedOptimizer(self._optimizer, named_parameters=self._model.named_parameters())
+            hvd.broadcast_parameters(self._model.state_dict(), root_rank=ROOT_RANK)
+            # Set the scope of training data
+            self._dataset.set_gpu_scope(hvd.rank(), hvd.size())
+        elif self._multigpu:
+            # Pytorch-based multi gpu backend
+            model.cuda()
+            self._model = nn.DataParallel(model)
+        elif torch.cuda.is_available():
+            # Single-gpu case
+            self._model = model
+            self._model.cuda()
+        else:
+            self._model = model
+
     def configure(self, save_path=None, clip_norm=0, n_valid_per_epoch=10, criteria="loss", tensorboard_logdir=None, tensorboard_namespace=None):
         """Configure the hyperparameters of the trainer.
         """
@@ -119,15 +148,11 @@ class TrainerKit(object):
     def train(self, batch):
         """Run one forward and backward step with given batch.
         """
-        # import horovod.torch as hvd
         self._optimizer.zero_grad()
-        # self._optimizer.step()
         if isinstance(self._dataset, MTDataset):
             src_seq = Variable(batch.src.transpose(0, 1))
             tgt_seq = Variable(batch.tgt.transpose(0, 1))
             vars = [src_seq, tgt_seq]
-            # sys.stdout.write("batsz {} {}\n".format(hvd.local_rank(), int(src_seq.shape[0])))
-            # sys.stdout.flush()
         else:
             vars = []
             for x in batch:
@@ -142,10 +167,9 @@ class TrainerKit(object):
         if not OPTS.shard:
             val_map["loss"].backward()
         if self._clip_norm > 0:
-            if self._multigpu:
+            if self._multigpu and self._horovod:
                 self._optimizer.synchronize()
             torch.nn.utils.clip_grad_norm_(self._model.parameters(), self._clip_norm)
-            # self._clip_grad_norm()
         self._optimizer.step()
         self.print_progress(val_map)
         self.record_train_scores(val_map)
@@ -166,10 +190,10 @@ class TrainerKit(object):
                 self._dict_str(score_map), " *" if is_improved else "",
                 self._current_epoch + 1, self._global_step + 1
             ))
-        # Check new trainer settings
-        if valid_condition and self._multigpu:
+        # Check new trainer settings when using horovod
+        if valid_condition and self._multigpu and self._horovod:
             self.synchronize_learning_rate()
-        if (self._current_step + 1) % 50 == 0 and self._multigpu:
+        if (self._current_step + 1) % 50 == 0 and self._multigpu and self._horovod:
             import horovod.torch as hvd
             hvd.init()
             from nmtlab.trainers.hvd_utils import broadcast_optimizer_state
@@ -278,7 +302,7 @@ class TrainerKit(object):
         is_finished = self._scheduler.is_finished()
         if is_finished and self._summary_writer is not None:
             self._summary_writer.close()
-        if self._multigpu:
+        if self._multigpu and self._horovod:
             import horovod.torch as hvd
             flag_tensor = torch.tensor(1 if is_finished else 0)
             flag_tensor = hvd.broadcast(flag_tensor, ROOT_RANK)
@@ -292,7 +316,7 @@ class TrainerKit(object):
     def synchronize_learning_rate(self):
         """Synchronize learning rate over all devices.
         """
-        if self._multigpu:
+        if self._multigpu and self._horovod:
             import horovod.torch as hvd
             lr = torch.tensor(self.learning_rate())
             lr = hvd.broadcast(lr, ROOT_RANK)
@@ -410,6 +434,9 @@ class TrainerKit(object):
             else:
                 bleus.append(smoothed_bleu(out_tokens, ref_tokens))
         return np.mean(bleus)
+
+    def using_horovod(self):
+        return self._horovod
     
     @staticmethod
     def _dict_str(rmap):
@@ -418,7 +445,7 @@ class TrainerKit(object):
         )
     
     def _is_root_node(self):
-        if self._multigpu:
+        if self._multigpu and self._horovod:
             import horovod.torch as hvd
             return hvd.local_rank() == ROOT_RANK
         else:
