@@ -133,13 +133,16 @@ class TrainerKit(object):
         assert self._criteria in ("bleu", "loss", "mix")
         self._valid_freq = int(self._n_train_batch / self._n_valid_per_epoch)
         if tensorboard_logdir is not None and self._is_root_node():
-            from tensorboardX import SummaryWriter
-            if tensorboard_namespace is None:
-                tensorboard_namespace = "nmtlab"
-            tensorboard_namespace = tensorboard_namespace.replace(".", "_")
-            self._summary_writer = SummaryWriter(log_dir=tensorboard_logdir, comment=tensorboard_namespace)
-            self._tensorboard_namespace = tensorboard_namespace
-    
+            try:
+                from tensorboardX import SummaryWriter
+                if tensorboard_namespace is None:
+                    tensorboard_namespace = "nmtlab"
+                tensorboard_namespace = tensorboard_namespace.replace(".", "_")
+                self._summary_writer = SummaryWriter(log_dir=tensorboard_logdir, comment=tensorboard_namespace)
+                self._tensorboard_namespace = tensorboard_namespace
+            except ModuleNotFoundError:
+                print("[trainer] tensorboardX is not found, logger is disabled.")
+
     @abstractmethod
     def run(self):
         """Run the training from begining to end.
@@ -164,8 +167,11 @@ class TrainerKit(object):
         if self._cuda_avaiable:
             vars = [var.cuda() if isinstance(var, torch.Tensor) else var for var in vars]
         val_map = self._model(*vars)
+        if self._multigpu and not self._horovod:
+            for k, v in val_map.items():
+                val_map[k] = v.mean()
         if not OPTS.shard:
-            val_map["loss"].backward()
+                val_map["loss"].backward()
         if self._clip_norm > 0:
             if self._multigpu and self._horovod:
                 self._optimizer.synchronize()
@@ -235,7 +241,10 @@ class TrainerKit(object):
                 if v is not None:
                     score_map[k].append(v)
         for key, vals in score_map.items():
-            val = np.mean([v.cpu() for v in vals])
+            if self._multigpu and not self._horovod:
+                val = np.mean([v.mean().cpu() for v in vals])
+            else:
+                val = np.mean([v.cpu() for v in vals])
             score_map[key] = val
             if self._summary_writer is not None:
                 self._summary_writer.add_scalar("{}/valid_{}".format(self._tensorboard_namespace, key), val, self._global_step)
