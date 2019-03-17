@@ -55,7 +55,7 @@ class Transformer(EncoderDecoderModel):
         self.decoder_norm = nn.LayerNorm(self.hidden_size)
         # Shared embedding layer
         self.src_embed_layer = TransformerEmbedding(self._src_vocab_size, self.embed_size, dropout_ratio=self._dropout_ratio)
-        self.tgt_embed_layer = TransformerEmbedding(self._tgt_vocab_size, self.embed_size, dropout_ratio=self._dropout_ratio)
+        self.y_embed_layer = TransformerEmbedding(self._tgt_vocab_size, self.embed_size, dropout_ratio=self._dropout_ratio)
         self.temporal_mask = TemporalMasking()
         # Encoder
         self.encoder_layers = nn.ModuleList()
@@ -110,7 +110,7 @@ class Transformer(EncoderDecoderModel):
         return loss
     
     def lookup_feedback(self, feedback):
-        return self.tgt_embed_layer(feedback)
+        return self.y_embed_layer(feedback)
     
     def decode_step(self, context, states, full_sequence=False):
         if full_sequence:
@@ -124,7 +124,7 @@ class Transformer(EncoderDecoderModel):
             states["final_states"] = self.decoder_norm(x)
         else:
             # During beam search: stepwise mode
-            feedback_embed = self.tgt_embed_layer(states.prev_token.transpose(0, 1), start=states.t).transpose(0, 1)  # ~ (batch, size)
+            feedback_embed = self.y_embed_layer(states.prev_token.transpose(0, 1), start=states.t).transpose(0, 1)  # ~ (batch, size)
             # print("embed", feedback_embed[0, 1, :2])
             if states.t == 0:
                 states.embeddings = feedback_embed
