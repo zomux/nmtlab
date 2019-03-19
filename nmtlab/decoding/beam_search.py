@@ -294,7 +294,10 @@ class BeamSearchKit(object):
             if not result:
                 err += 1
             # Write the results and print progress
-            fout.write("{}\t{}\n".format(i, result))
+            if self._is_multigpu:
+                fout.write("{}\t{}\n".format(i, result))
+            else:
+                fout.write("{}\n".format(result))
             fout.flush()
             if self._is_multigpu and hvd.local_rank() == 0:
                 sys.stdout.write("translating: {:.0f}%  err: {}    \r".format(float(i + 1) * 100 / len(test_lines),
