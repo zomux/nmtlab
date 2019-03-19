@@ -276,14 +276,18 @@ class EncoderDecoderModel(nn.Module):
                 loss.backward()
         OPTS.disable_backward_hooks = False
         # Monitor scores
+        monitors = {}
         for k in score_map:
-            self.monitor(k, sum(score_map[k]))
+            val = sum(score_map[k])
+            self.monitor(k, val)
+            monitors[k] = val
         # Backpropagate the gradients to all the parameters
         if is_grad_enabled:
             detached_items = list(decoder_outputs.get_detached_items().values())
             state_tensors = [x[1] for x in detached_items]
             grads = [x[0].grad for x in detached_items]
             torch.autograd.backward(state_tensors, grads)
+        return monitors
 
     def load(self, path):
         state_dict = torch.load(path, map_location=lambda storage, loc: storage)
