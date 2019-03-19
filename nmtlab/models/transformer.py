@@ -96,14 +96,17 @@ class Transformer(EncoderDecoderModel):
         }
         return encoder_outputs
     
-    def compute_loss(self, logits, tgt_seq, tgt_mask, denominator=None):
+    def compute_loss(self, logits, tgt_seq, tgt_mask, denominator=None, ignore_first_token=True):
         if self._label_uncertainty > 0:
             return super(Transformer, self).compute_loss(logits, tgt_seq, tgt_mask, denominator)
         B, T, _ = logits.shape
         logits = F.log_softmax(logits, dim=2)
         flat_logits = logits.contiguous().view(B * T, self._tgt_vocab_size)
-        flat_targets = tgt_seq[:, 1:].contiguous().view(B * T)
-        flat_mask = tgt_mask[:, 1:].contiguous().view(B * T)
+        if ignore_first_token:
+            tgt_seq = tgt_seq[:, 1:]
+            tgt_mask = tgt_mask[:, 1:]
+        flat_targets = tgt_seq.contiguous().view(B * T)
+        flat_mask = tgt_mask.contiguous().view(B * T)
         if denominator is None:
             denominator = flat_mask.sum()
         loss = self.label_smooth(flat_logits, flat_targets) / denominator

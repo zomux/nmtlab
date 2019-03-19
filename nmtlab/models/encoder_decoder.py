@@ -181,7 +181,7 @@ class EncoderDecoderModel(nn.Module):
         Expand decoder outputs to a vocab-size tensor.
         """
     
-    def compute_loss(self, logits, tgt_seq, tgt_mask, denominator=None):
+    def compute_loss(self, logits, tgt_seq, tgt_mask, denominator=None, ignore_first_token=True):
         if self._label_uncertainty > 0 and self.training and not OPTS.marginloss:
             uniform_seq = tgt_seq.float().uniform_(0, self._tgt_vocab_size)
             smooth_mask = tgt_seq.float().bernoulli_(self._label_uncertainty)
@@ -190,13 +190,16 @@ class EncoderDecoderModel(nn.Module):
         B, T, _ = logits.shape
         logits = F.log_softmax(logits, dim=2)
         flat_logits = logits.contiguous().view(B * T, self._tgt_vocab_size)
-        flat_targets = tgt_seq[:, 1:].contiguous().view(B * T)
+        if ignore_first_token:
+            tgt_seq = tgt_seq[:, 1:]
+            tgt_mask = tgt_mask[:, 1:]
+        flat_targets = tgt_seq.contiguous().view(B * T)
         loss = nn.NLLLoss(ignore_index=0, reduce=False).forward(flat_logits, flat_targets)
         if OPTS.marginloss:
             correct_mask = (flat_logits.argmax(1) == flat_targets).float()
             loss = (1 - correct_mask) * loss
         if denominator is None:
-            loss = loss.sum() / tgt_mask[:, 1:].sum().float()
+            loss = loss.sum() / tgt_mask.sum().float()
         else:
             loss = loss.sum() / denominator
         return loss
@@ -229,23 +232,27 @@ class EncoderDecoderModel(nn.Module):
             self.monitor("sampled_tokens", sample_outputs.prev_token)
         return self._monitors
     
-    def compute_word_accuracy(self, logits, tgt_seq, tgt_mask, denominator=None):
+    def compute_word_accuracy(self, logits, tgt_seq, tgt_mask, denominator=None, ignore_first_token=True):
         """Compute per-word accuracy."""
         preds = logits.argmax(2)
-        tgt_seq = tgt_seq[:, 1:]
-        tgt_mask = tgt_mask[:, 1:]
+        if ignore_first_token:
+            tgt_seq = tgt_seq[:, 1:]
+            tgt_mask = tgt_mask[:, 1:]
         if denominator is None:
             denominator = tgt_mask.sum().float()
         word_acc = (preds.eq(tgt_seq).float() * tgt_mask).sum() / denominator
         return word_acc
     
-    def compute_shard_loss(self, decoder_outputs, tgt_seq, tgt_mask, denominator=None):
+    def compute_shard_loss(self, decoder_outputs, tgt_seq, tgt_mask, denominator=None, ignore_first_token=True):
         assert isinstance(decoder_outputs, TensorMap)
         is_grad_enabled = torch.is_grad_enabled()
         B = tgt_seq.shape[0]
         score_map = defaultdict(list)
         if denominator is None:
-            denom = tgt_mask[:, 1:].sum()
+            if ignore_first_token:
+                denom = tgt_mask[:, 1:].sum()
+            else:
+                denom = tgt_mask.sum()
         else:
             denom = denominator
         # Compute loss for each shard
@@ -256,8 +263,10 @@ class EncoderDecoderModel(nn.Module):
             j = i + self._shard_size
             decoder_outputs.select_batch(i, j, detach=True)
             logits = self.expand(decoder_outputs)
-            loss = self.compute_loss(logits, tgt_seq[i:j], tgt_mask[i:j], denominator=denom)
-            word_acc = self.compute_word_accuracy(logits, tgt_seq[i:j], tgt_mask[i:j], denominator=denom)
+            loss = self.compute_loss(logits, tgt_seq[i:j], tgt_mask[i:j], denominator=denom,
+                                     ignore_first_token=ignore_first_token)
+            word_acc = self.compute_word_accuracy(logits, tgt_seq[i:j], tgt_mask[i:j], denominator=denom,
+                                                  ignore_first_token=ignore_first_token)
             score_map["loss"].append(loss)
             score_map["word_acc"].append(word_acc)
             if i >= B - self._shard_size:
@@ -280,6 +289,12 @@ class EncoderDecoderModel(nn.Module):
         state_dict = torch.load(path, map_location=lambda storage, loc: storage)
         if "model_state" in state_dict:
             state_dict = state_dict["model_state"]
+        state_keys = list(state_dict.keys())
+        for key in state_keys:
+            if key.startswith("module."):
+                new_key = key[7:]
+                state_dict[new_key] = state_dict[key]
+                del state_dict[key]
         self.load_state_dict(state_dict)
         
     def state_names(self):

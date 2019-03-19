@@ -130,7 +130,7 @@ class TrainerKit(object):
         self._clip_norm = clip_norm
         self._n_valid_per_epoch = n_valid_per_epoch
         self._criteria = criteria
-        assert self._criteria in ("bleu", "loss", "mix")
+        # assert self._criteria in ("bleu", "loss", "mix")
         self._valid_freq = int(self._n_train_batch / self._n_valid_per_epoch)
         if tensorboard_logdir is not None and self._is_root_node():
             try:
