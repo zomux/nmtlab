@@ -243,7 +243,8 @@ class EncoderDecoderModel(nn.Module):
         word_acc = (preds.eq(tgt_seq).float() * tgt_mask).sum() / denominator
         return word_acc
     
-    def compute_shard_loss(self, decoder_outputs, tgt_seq, tgt_mask, denominator=None, ignore_first_token=True):
+    def compute_shard_loss(self, decoder_outputs, tgt_seq, tgt_mask, denominator=None, ignore_first_token=True,
+                           backward=True):
         assert isinstance(decoder_outputs, TensorMap)
         is_grad_enabled = torch.is_grad_enabled()
         B = tgt_seq.shape[0]
@@ -286,8 +287,11 @@ class EncoderDecoderModel(nn.Module):
             detached_items = list(decoder_outputs.get_detached_items().values())
             state_tensors = [x[1] for x in detached_items]
             grads = [x[0].grad for x in detached_items]
-            torch.autograd.backward(state_tensors, grads)
-        return monitors
+            if backward:
+                torch.autograd.backward(state_tensors, grads)
+        else:
+            state_tensors, grads = None, None
+        return monitors, state_tensors, grads
 
     def load(self, path):
         state_dict = torch.load(path, map_location=lambda storage, loc: storage)
