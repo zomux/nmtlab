@@ -16,6 +16,7 @@ import torch
 import torch.nn as nn
 from torch.optim.optimizer import Optimizer
 from torch.autograd import Variable
+from torchtext.data.batch import Batch
 
 from nmtlab.models import EncoderDecoderModel
 from nmtlab.utils import smoothed_bleu
@@ -147,18 +148,21 @@ class TrainerKit(object):
     def run(self):
         """Run the training from begining to end.
         """
-    
-    def train(self, batch):
-        """Run one forward and backward step with given batch.
+
+    def extract_vars(self, batch):
+        """Extract variables from batch
         """
-        self._optimizer.zero_grad()
         if isinstance(self._dataset, MTDataset):
             src_seq = Variable(batch.src.transpose(0, 1))
             tgt_seq = Variable(batch.tgt.transpose(0, 1))
             vars = [src_seq, tgt_seq]
         else:
             vars = []
-            for x in batch:
+            if isinstance(batch, Batch):
+                batch_vars = list(batch)[0]
+            else:
+                batch_vars = batch
+            for x in batch_vars:
                 if type(x) == np.array:
                     if "int" in str(x.dtype):
                         x = x.astype("int64")
@@ -166,6 +170,13 @@ class TrainerKit(object):
                 vars.append(x)
         if self._cuda_avaiable:
             vars = [var.cuda() if isinstance(var, torch.Tensor) else var for var in vars]
+        return vars
+
+    def train(self, batch):
+        """Run one forward and backward step with given batch.
+        """
+        self._optimizer.zero_grad()
+        vars = self.extract_vars(batch)
         val_map = self._model(*vars)
         if self._multigpu and not self._horovod:
             for k, v in val_map.items():
@@ -214,23 +225,11 @@ class TrainerKit(object):
         # print("enter run valid")
         for batch in self._dataset.valid_set():
             with torch.no_grad():
-                if isinstance(self._dataset, MTDataset):
-                    src_seq = Variable(batch.src.transpose(0, 1))
-                    tgt_seq = Variable(batch.tgt.transpose(0, 1))
-                    vars = [src_seq, tgt_seq]
-                else:
-                    vars = []
-                    for x in batch:
-                        if type(x) == np.array:
-                            if "int" in str(x.dtype):
-                                x = x.astype("int64")
-                            x = Variable(torch.tensor(x))
-                        vars.append(x)
-                if self._cuda_avaiable:
-                    vars = [var.cuda() if isinstance(var, torch.Tensor) else var for var in vars]
+                vars = self.extract_vars(batch)
                 val_map = self._model(*vars, sampling=True)
             # Estimate BLEU
             if "sampled_tokens" in val_map and val_map["sampled_tokens"] is not None:
+                tgt_seq = vars[1]
                 bleu = self._compute_bleu(val_map["sampled_tokens"], tgt_seq)
                 score_map["bleu"].append(- bleu)
                 if self._criteria == "mix":
