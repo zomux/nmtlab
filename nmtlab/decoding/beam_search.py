@@ -255,7 +255,7 @@ class BeamSearchKit(object):
         """
         self.model.load(model_path)
     
-    def batch_translate(self, input_path, output_path, field=0, remove_subword_tokens=True):
+    def batch_translate(self, input_path, output_path, field=0, remove_subword_tokens=True, max_length=100):
         """Translate a file."""
         # Check whether using multiple GPUs
         try:
@@ -283,7 +283,11 @@ class BeamSearchKit(object):
             # Translate
             pair = line.strip().split("\t")
             src_sent = pair[field]
-            result, _ = self.translate("<s> {} </s>".format(src_sent))
+            if len(src_sent.split()) > max_length:
+                result = "x"
+            else:
+                result, _ = self.translate("<s> {} </s>".format(src_sent))
+
             if result is None:
                 result = ""
             if remove_subword_tokens:
