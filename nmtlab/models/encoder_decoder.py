@@ -303,10 +303,6 @@ class EncoderDecoderModel(nn.Module):
                 new_key = key[7:]
                 state_dict[new_key] = state_dict[key]
                 del state_dict[key]
-            if key.startswith("y_embed_layer"):
-                new_key = key.replace("y_embed_layer", "tgt_embed_layer")
-                state_dict[new_key] = state_dict[key]
-                del state_dict[key]
         self.load_state_dict(state_dict)
         
     def state_names(self):
