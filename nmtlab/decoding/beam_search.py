@@ -255,7 +255,7 @@ class BeamSearchKit(object):
         """
         self.model.load(model_path)
     
-    def batch_translate(self, input_path, output_path, field=0, remove_subword_tokens=True, max_length=100):
+    def batch_translate(self, input_path, output_path, field=0, remove_subword_tokens=True, max_length=100, resume=False):
         """Translate a file."""
         # Check whether using multiple GPUs
         try:
