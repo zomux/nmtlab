@@ -269,6 +269,14 @@ class BeamSearchKit(object):
         else:
             sync_tensor = None
             tmp_output_path = output_path
+        result_map = {}
+        if self._is_multigpu and resume and os.path.exists(tmp_output_path):
+            for line in open(tmp_output_path):
+                pair = line.strip("\n").split("\t")
+                if len(pair) != 2:
+                    print(line)
+                id, line = pair
+                result_map[id] = line
         fout = open(tmp_output_path, "w")
         test_lines = list(open(input_path))
         err = 0
@@ -286,7 +294,10 @@ class BeamSearchKit(object):
             if len(src_sent.split()) > max_length:
                 result = "x"
             else:
-                result, _ = self.translate("<s> {} </s>".format(src_sent))
+                if i in result_map:
+                    result = result_map[i]
+                else:
+                    result, _ = self.translate("<s> {} </s>".format(src_sent))
 
             if result is None:
                 result = ""
