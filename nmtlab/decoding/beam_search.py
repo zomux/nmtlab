@@ -276,7 +276,8 @@ class BeamSearchKit(object):
                 if len(pair) != 2:
                     print(line)
                 id, line = pair
-                result_map[id] = line
+                result_map[int(id)] = line
+            print("loaded {} computed results".format(len(result_map)))
         fout = open(tmp_output_path, "w")
         test_lines = list(open(input_path))
         err = 0
