@@ -6,3 +6,4 @@ from .dataset.mt_dataset import MTDataset
 from .utils.vocab import Vocab
 from .models import AttentionModel, EncoderDecoderModel
 
+__version__ = "0.4.0"

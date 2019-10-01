@@ -6,6 +6,7 @@ from __future__ import division
 from __future__ import print_function
 
 import sys
+import os
 import time
 from collections import defaultdict
 from six.moves import xrange
@@ -65,6 +66,7 @@ class TrainerKit(object):
         self._global_step = 0
         self._train_scores = defaultdict(float)
         self._train_count = 0
+        self._checkpoint_count = 0
         self._summary_writer = None
         self._tensorboard_namespace = None
         # Print information
@@ -124,13 +126,16 @@ class TrainerKit(object):
         else:
             self._model = model
 
-    def configure(self, save_path=None, clip_norm=0, n_valid_per_epoch=10, criteria="loss", tensorboard_logdir=None, tensorboard_namespace=None):
+    def configure(self, save_path=None, clip_norm=0, n_valid_per_epoch=10, criteria="loss",
+                  checkpoint_average=0,
+                  tensorboard_logdir=None, tensorboard_namespace=None):
         """Configure the hyperparameters of the trainer.
         """
         self._save_path = save_path
         self._clip_norm = clip_norm
         self._n_valid_per_epoch = n_valid_per_epoch
         self._criteria = criteria
+        self._checkpoint_average = checkpoint_average
         # assert self._criteria in ("bleu", "loss", "mix")
         self._valid_freq = int(self._n_train_batch / self._n_valid_per_epoch)
         if tensorboard_logdir is not None and self._is_root_node():
@@ -251,9 +256,16 @@ class TrainerKit(object):
     
     def check_improvement(self, score_map):
         cri = score_map[self._criteria]
+        self._checkpoint_count += 1
+        if self._checkpoint_average > 0:
+            self.save(path=self._save_path + ".chk{}".format(self._checkpoint_count))
+            old_checkpoint = self._save_path + ".chk{}".format(self._checkpoint_count - self._checkpoint_average)
+            if os.path.exists(old_checkpoint):
+                os.remove(old_checkpoint)
         if cri < self._best_criteria - abs(self._best_criteria) * 0.001:
             self._best_criteria = cri
-            self.save()
+            if self._checkpoint_average <= 0:
+                self.save()
             return True
         else:
             return False
@@ -287,7 +299,7 @@ class TrainerKit(object):
         if path is None:
             path = self._save_path
         if path is not None:
-            torch.save(state_dict, self._save_path)
+            torch.save(state_dict, path)
             open(self._save_path + ".log", "w").writelines([l + "\n" for l in self._log_lines])
     
     def load(self, path=None):
