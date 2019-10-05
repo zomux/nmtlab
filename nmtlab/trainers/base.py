@@ -467,7 +467,7 @@ class TrainerKit(object):
     def _is_root_node(self):
         if self._multigpu and self._horovod:
             import horovod.torch as hvd
-            return hvd.local_rank() == ROOT_RANK
+            return hvd.rank() == ROOT_RANK
         else:
             return True
 
