@@ -30,6 +30,8 @@ class EncoderDecoderModel(nn.Module):
                  state_names=None, state_sizes=None,
                  shard_size=32,
                  label_uncertainty=0,
+                 fp16=False,
+                 enable_valid_grad=False,
                  seed=3):
         super(EncoderDecoderModel, self).__init__()
         if dataset is None and (src_vocab_size is None or tgt_vocab_size is None):
@@ -39,6 +41,8 @@ class EncoderDecoderModel(nn.Module):
         self._shard_size = shard_size
         self._stepwise_training = True
         self._label_uncertainty = label_uncertainty
+        self._fp16 = fp16
+        self.enable_valid_grad = enable_valid_grad
         torch.manual_seed(seed)
         torch.cuda.manual_seed(seed)
         if dataset is not None:
@@ -75,7 +79,9 @@ class EncoderDecoderModel(nn.Module):
                         nn.init.constant_(param, 0.0)
                         n = param.size(0)
                         param.data[n//4: n//2].fill_(1.)
-    
+        if self._fp16:
+            self.half()
+
     def set_states(self, state_names, state_sizes=None):
         """Set state names and sizes for the decoder.
         """
@@ -183,9 +189,9 @@ class EncoderDecoderModel(nn.Module):
     
     def compute_loss(self, logits, tgt_seq, tgt_mask, denominator=None, ignore_first_token=True):
         if self._label_uncertainty > 0 and self.training and not OPTS.marginloss:
-            uniform_seq = tgt_seq.float().uniform_(0, self._tgt_vocab_size)
-            smooth_mask = tgt_seq.float().bernoulli_(self._label_uncertainty)
-            tgt_seq = (1 - smooth_mask) * tgt_seq.float() + smooth_mask * uniform_seq
+            uniform_seq = self.to_float(tgt_seq).uniform_(0, self._tgt_vocab_size)
+            smooth_mask = self.to_float(tgt_seq).bernoulli_(self._label_uncertainty)
+            tgt_seq = (1 - smooth_mask) * self.to_float(tgt_seq) + smooth_mask * uniform_seq
             tgt_seq = tgt_seq.long()
         B, T, _ = logits.shape
         logits = F.log_softmax(logits, dim=2)
@@ -196,10 +202,10 @@ class EncoderDecoderModel(nn.Module):
         flat_targets = tgt_seq.contiguous().view(B * T)
         loss = nn.NLLLoss(ignore_index=0, reduce=False).forward(flat_logits, flat_targets)
         if OPTS.marginloss:
-            correct_mask = (flat_logits.argmax(1) == flat_targets).float()
+            correct_mask = self.to_float(flat_logits.argmax(1) == flat_targets)
             loss = (1 - correct_mask) * loss
         if denominator is None:
-            loss = loss.sum() / tgt_mask.sum().float()
+            loss = loss.sum() / self.to_float(tgt_mask.sum())
         else:
             loss = loss.sum() / denominator
         return loss
@@ -213,8 +219,8 @@ class EncoderDecoderModel(nn.Module):
         """Forward to compute the loss.
         """
         sampling = False
-        src_mask = torch.ne(src_seq, 0).float()
-        tgt_mask = torch.ne(tgt_seq, 0).float()
+        src_mask = self.to_float(torch.ne(src_seq, 0))
+        tgt_mask = self.to_float(torch.ne(tgt_seq, 0))
         encoder_outputs = MapDict(self.encode(src_seq, src_mask))
         context, states = self.pre_decode(encoder_outputs, tgt_seq, src_mask=src_mask, tgt_mask=tgt_mask)
         decoder_outputs = self.decode(context, states)
@@ -239,8 +245,8 @@ class EncoderDecoderModel(nn.Module):
             tgt_seq = tgt_seq[:, 1:]
             tgt_mask = tgt_mask[:, 1:]
         if denominator is None:
-            denominator = tgt_mask.sum().float()
-        word_acc = (preds.eq(tgt_seq).float() * tgt_mask).sum() / denominator
+            denominator = self.to_float(tgt_mask.sum())
+        word_acc = (self.to_float(preds.eq(tgt_seq)) * tgt_mask).sum() / denominator
         return word_acc
     
     def compute_shard_loss(self, decoder_outputs, tgt_seq, tgt_mask, denominator=None, ignore_first_token=True,
@@ -310,3 +316,9 @@ class EncoderDecoderModel(nn.Module):
     
     def state_sizes(self):
         return self._state_sizes
+
+    def to_float(self, x):
+        if self._fp16:
+            return x.half()
+        else:
+            return x.float()

@@ -14,13 +14,13 @@ class BeamTranslator(BeamSearchKit):
     """Beam search translator with length normalization.
     """
     
-    def beam_search(self, input_tokens, nbest=False):
+    def beam_search(self, input_tokens, nbest=False, fix_steps=None):
         self.model.train(False)
         encoder_outputs = self.encode(input_tokens)
         # Create initial hyptheses
         hyps, final_hyps = self.initialize_hyps(encoder_outputs)
-        
-        for t in range(MAX_STEPS):
+        max_steps = fix_steps if fix_steps is not None else MAX_STEPS
+        for t in range(max_steps):
             # Make batch of states
             states = self.combine_states(t, hyps)
             
@@ -33,7 +33,7 @@ class BeamTranslator(BeamSearchKit):
             # Expand to get new hypotheses for beam search
             hyps, final_hyps = self.get_new_hyps(
                 hyps, final_hyps, new_states, batch_scores=new_scores)
-            if len(final_hyps) == self.beam_size:
+            if fix_steps is None and len(final_hyps) == self.beam_size:
                 break
         
         final_hyps.sort(key=lambda h: h["score"], reverse=True)

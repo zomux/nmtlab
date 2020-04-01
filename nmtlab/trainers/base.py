@@ -189,8 +189,8 @@ class TrainerKit(object):
         if not OPTS.shard:
                 val_map["loss"].backward()
         if self._clip_norm > 0:
-            if self._multigpu and self._horovod:
-                self._optimizer.synchronize()
+            # if self._multigpu and self._horovod:
+            #     self._optimizer.synchronize()
             torch.nn.utils.clip_grad_norm_(self._model.parameters(), self._clip_norm)
         self._optimizer.step()
         self.print_progress(val_map)
@@ -215,7 +215,7 @@ class TrainerKit(object):
         # Check new trainer settings when using horovod
         if valid_condition and self._multigpu and self._horovod:
             self.synchronize_learning_rate()
-        if (self._current_step + 1) % 50 == 0 and self._multigpu and self._horovod:
+        if (self._current_step + 1) % 1000 == 0 and self._multigpu and self._horovod:
             import horovod.torch as hvd
             hvd.init()
             from nmtlab.trainers.hvd_utils import broadcast_optimizer_state
@@ -229,9 +229,13 @@ class TrainerKit(object):
         score_map = defaultdict(list)
         # print("enter run valid")
         for batch in self._dataset.valid_set():
-            with torch.no_grad():
-                vars = self.extract_vars(batch)
+            vars = self.extract_vars(batch)
+            if self._model.enable_valid_grad:
                 val_map = self._model(*vars, sampling=True)
+                self._model.zero_grad()
+            else:
+                with torch.no_grad():
+                    val_map = self._model(*vars, sampling=True)
             # Estimate BLEU
             if "sampled_tokens" in val_map and val_map["sampled_tokens"] is not None:
                 tgt_seq = vars[1]
@@ -248,7 +252,7 @@ class TrainerKit(object):
             if self._multigpu and not self._horovod:
                 val = np.mean([v.mean().cpu() for v in vals])
             else:
-                val = np.mean([v.cpu() for v in vals])
+                val = np.mean([v.cpu().detach() for v in vals])
             score_map[key] = val
             if self._summary_writer is not None:
                 self._summary_writer.add_scalar("{}/valid_{}".format(self._tensorboard_namespace, key), val, self._global_step)
@@ -284,7 +288,9 @@ class TrainerKit(object):
         self._log_lines.append(line)
         if self._is_root_node():
             print(line)
-    
+            if self._summary_writer is not None:
+                self._summary_writer.add_text(who, msg)
+
     def save(self, path=None):
         """Save the trainer to the given file path.
         """
@@ -380,6 +386,8 @@ class TrainerKit(object):
         """
         self._current_step = step
         self._scheduler.before_step()
+        # if "trains_task" in OPTS and OPTS.trains_task is not None:
+        #     OPTS.trains_task.set_last_iteration(step)
     
     def epoch(self):
         """Get current epoch.

@@ -17,7 +17,7 @@ class BilingualDataset(Dataset):
             "tgt": ("tgt", tgt_field)
         }
         examples = []
-        for src, tgt in zip(open(src_path), open(tgt_path)):
+        for src, tgt in zip(open(src_path, encoding="utf-8"), open(tgt_path, encoding="utf-8")):
             example = Example.fromdict(
                 {"src": src.strip(), "tgt": tgt.strip()},
                 fields

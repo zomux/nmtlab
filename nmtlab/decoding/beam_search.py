@@ -22,7 +22,7 @@ class BeamSearchKit(object):
     
     __metaclass__ = ABCMeta
     
-    def __init__(self, model, source_vocab, target_vocab, start_token="<s>", end_token="</s>", beam_size=5, opts=None, device=None):
+    def __init__(self, model, source_vocab, target_vocab, start_token="<s>", end_token="</s>", beam_size=5, length_norm=False, opts=None, device=None):
         assert isinstance(model, EncoderDecoderModel)
         # Iniliatize horovod for multigpu translate
         self._is_multigpu = False
@@ -36,6 +36,7 @@ class BeamSearchKit(object):
             pass
         if torch.cuda.is_available():
             model.cuda(device)
+        self.length_norm = length_norm
         self.model = model
         self.source_vocab = source_vocab
         self.target_vocab = target_vocab
@@ -142,15 +143,6 @@ class BeamSearchKit(object):
                 new_hyp_state[sname] = new_states[sname][:, i, :].unsqueeze(1)
             new_scores = best_scores[i].cpu().detach().numpy().tolist()
             new_tokens = best_tokens[i].cpu().detach().numpy().tolist()
-            if OPTS.Tjiwei_diversity or OPTS.Tjiwei_diversity2 or OPTS.Tjiwei_diversity8:
-                if OPTS.Tjiwei_diversity:
-                    coef = 1.0
-                elif OPTS.Tjiwei_diversity2:
-                    coef = 0.5
-                elif OPTS.Tjiwei_diversity8:
-                    coef = 0.8
-                for kp in range(len(new_scores)):
-                    new_scores[kp] -= (kp + 1.) * coef
             for new_token, new_score in zip(new_tokens, new_scores):
                 new_hyp = {
                     "state": new_hyp_state,
@@ -181,9 +173,14 @@ class BeamSearchKit(object):
             if hyp["tokens"][-1] == self.end_token_id:
                 # This hypothesis is finished, remove <s> and </s>
                 tokens = hyp["tokens"][1:-1]
+                if self.length_norm:
+                    lp = (float(5 + len(tokens)) ** 0.6) / (6. ** 0.6)
+                    score = hyp["score"] / lp
+                else:
+                    score = hyp["score"] / (len(tokens) + 1),
                 final_hyps.append({
                     "tokens": tokens,
-                    "score": hyp["score"] / (len(tokens) + 1),
+                    "score": score,
                     "raw": hyp
                 })
         # Remove finished hypotheses

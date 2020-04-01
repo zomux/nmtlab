@@ -56,7 +56,7 @@ class GlobalOptions(MapDict):
         try:
             import horovod.torch as hvd
             hvd.init()
-            if hvd.local_rank() == 0:
+            if hvd.rank() == 0:
                 print("[OPTS] Model tag:", self.model_tag)
         except:
             print("[OPTS] Model tag:", self.model_tag)

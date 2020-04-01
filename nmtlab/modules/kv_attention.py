@@ -42,11 +42,11 @@ class KeyValAttention(nn.Module):
                 mask = self._dropout(mask)
             if mask.dim() < logits.dim():
                 mask = mask.unsqueeze(-2)
-            logits = logits.masked_fill(mask == 0, -1e9)
+            logits = logits.masked_fill(mask == 0, -1e3)
         elif self._dropout is not None:
             # Using dropout but no mask
             mask = self._dropout(logits.new_ones(logits.shape))
-            logits = logits.masked_fill(mask == 0, -1e9)
+            logits = logits.masked_fill(mask == 0, -1e3)
         weights = F.softmax(logits, dim=-1)
         context_vector = torch.matmul(weights, values)
         return context_vector, weights
