@@ -137,6 +137,8 @@ class TrainerKit(object):
         self._criteria = criteria
         self._comp_fn = comp_fn
         assert self._comp_fn in (min, max)
+        if self._comp_fn is max:
+            self._best_criteria = -10000.0
         self._checkpoint_average = checkpoint_average
         # assert self._criteria in ("bleu", "loss", "mix")
         self._valid_freq = int(self._n_train_batch / self._n_valid_per_epoch)
