@@ -128,7 +128,7 @@ class TrainerKit(object):
 
     def configure(self, save_path=None, clip_norm=0, n_valid_per_epoch=10, criteria="loss",
                   checkpoint_average=0,
-                  tensorboard_logdir=None, tensorboard_namespace=None):
+                  tensorboard_logdir=None, tensorboard_namespace=None, save_optim_state=True):
         """Configure the hyperparameters of the trainer.
         """
         self._save_path = save_path
@@ -136,6 +136,7 @@ class TrainerKit(object):
         self._n_valid_per_epoch = n_valid_per_epoch
         self._criteria = criteria
         self._checkpoint_average = checkpoint_average
+        self.save_optim_state = save_optim_state
         # assert self._criteria in ("bleu", "loss", "mix")
         self._valid_freq = int(self._n_train_batch / self._n_valid_per_epoch)
         if tensorboard_logdir is not None and self._is_root_node():
@@ -187,7 +188,7 @@ class TrainerKit(object):
             for k, v in val_map.items():
                 val_map[k] = v.mean()
         if not OPTS.shard:
-                val_map["loss"].backward()
+            val_map["loss"].backward()
         if self._clip_norm > 0:
             # if self._multigpu and self._horovod:
             #     self._optimizer.synchronize()
@@ -212,6 +213,8 @@ class TrainerKit(object):
                 self._dict_str(score_map), " *" if is_improved else "",
                 self._current_epoch + 1, self._global_step + 1
             ))
+            # Record to tensorboard
+            self.record_scores(score_map, is_improved)
         # Check new trainer settings when using horovod
         if valid_condition and self._multigpu and self._horovod:
             self.synchronize_learning_rate()
@@ -248,14 +251,13 @@ class TrainerKit(object):
             for k, v in val_map.items():
                 if v is not None:
                     score_map[k].append(v)
+        # Convert to scalar
         for key, vals in score_map.items():
             if self._multigpu and not self._horovod:
                 val = np.mean([v.mean().cpu() for v in vals])
             else:
                 val = np.mean([v.cpu().detach() for v in vals])
             score_map[key] = val
-            if self._summary_writer is not None:
-                self._summary_writer.add_scalar("{}/valid_{}".format(self._tensorboard_namespace, key), val, self._global_step)
         return score_map
     
     def check_improvement(self, score_map):
@@ -273,7 +275,16 @@ class TrainerKit(object):
             return True
         else:
             return False
-    
+
+    def record_scores(self, score_map, is_improved=False):
+        for key, val in score_map.items():
+            if self._summary_writer is not None:
+                self._summary_writer.add_scalar("{}/{}".format(
+                    self._tensorboard_namespace, key), val, self._global_step)
+                if is_improved:
+                    self._summary_writer.add_scalar("{}/{}*".format(
+                        self._tensorboard_namespace, key), val, self._global_step)
+
     def print_progress(self, val_map):
         progress = int(float(self._current_step) / self._n_train_batch * 100)
         speed = float(self._current_step * self._batch_size) / (time.time() - self._begin_time) * self._n_devices
@@ -299,7 +310,7 @@ class TrainerKit(object):
             "step": self._current_step,
             "global_step": self._global_step,
             "model_state": self._model.state_dict(),
-            "optimizer_state": self._optimizer.state_dict(),
+            "optimizer_state": self._optimizer.state_dict() if self.save_optim_state else None,
             "leanring_rate": self.learning_rate()
         }
         if path is None:
@@ -315,7 +326,8 @@ class TrainerKit(object):
         device_str = str(first_param.device)
         state_dict = torch.load(path, map_location=device_str)
         self._model.load_state_dict(state_dict["model_state"])
-        self._optimizer.load_state_dict(state_dict["optimizer_state"])
+        if state_dict["optimizer_state"] is not None:
+            self._optimizer.load_state_dict(state_dict["optimizer_state"])
         self._current_step = state_dict["step"]
         self._current_epoch = state_dict["epoch"]
         if "global_step" in state_dict:
