@@ -127,7 +127,7 @@ class TrainerKit(object):
             self._model = model
 
     def configure(self, save_path=None, clip_norm=0, n_valid_per_epoch=10, criteria="loss",
-                  checkpoint_average=0,
+                  comp_fn=min, checkpoint_average=0,
                   tensorboard_logdir=None, tensorboard_namespace=None, save_optim_state=True):
         """Configure the hyperparameters of the trainer.
         """
@@ -135,6 +135,10 @@ class TrainerKit(object):
         self._clip_norm = clip_norm
         self._n_valid_per_epoch = n_valid_per_epoch
         self._criteria = criteria
+        self._comp_fn = comp_fn
+        assert self._comp_fn in (min, max)
+        if self._comp_fn is max:
+            self._best_criteria = -10000.0
         self._checkpoint_average = checkpoint_average
         self.save_optim_state = save_optim_state
         # assert self._criteria in ("bleu", "loss", "mix")
@@ -268,7 +272,8 @@ class TrainerKit(object):
             old_checkpoint = self._save_path + ".chk{}".format(self._checkpoint_count - self._checkpoint_average)
             if os.path.exists(old_checkpoint):
                 os.remove(old_checkpoint)
-        if cri < self._best_criteria - abs(self._best_criteria) * 0.001:
+        # if cri < self._best_criteria - abs(self._best_criteria) * 0.001:
+        if self._comp_fn(cri, self._best_criteria) == cri:
             self._best_criteria = cri
             if self._checkpoint_average <= 0:
                 self.save()
