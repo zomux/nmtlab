@@ -251,7 +251,13 @@ class BeamSearchKit(object):
         """Load NMT model.
         """
         self.model.load(model_path)
-    
+
+    def _batch_translate_process(self, local_rank, local_size, output_path):
+        tmp_output_path = "/tmp/{}.{}".format(os.path.basename(output_path), local_rank)
+        fout = open(tmp_output_path, "w")
+
+
+
     def batch_translate(self, input_path, output_path, field=0, remove_subword_tokens=True, max_length=100, resume=False):
         """Translate a file."""
         # Check whether using multiple GPUs

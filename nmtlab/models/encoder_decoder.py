@@ -41,6 +41,7 @@ class EncoderDecoderModel(nn.Module):
         self._shard_size = shard_size
         self._stepwise_training = True
         self._label_uncertainty = label_uncertainty
+        self._trainable_modules = None
         self._fp16 = fp16
         self.enable_valid_grad = enable_valid_grad
         torch.manual_seed(seed)
@@ -164,18 +165,19 @@ class EncoderDecoderModel(nn.Module):
         context["feedbacks"] = tgt_seq
         context["feedback_embeds"] = feedback_embeds
         # Process initial states
-        for state_name, size in zip(self._state_names, self._state_sizes):
-            if "init_{}".format(state_name) in context:
-                states[state_name] = context["init_{}".format(state_name)]
-                if len(states[state_name].shape) == 2:
-                    states[state_name] = states[state_name].unsqueeze(0)
-                del context["init_{}".format(state_name)]
-            else:
-                states[state_name] = Variable(torch.zeros((1, B, size)))
-                if torch.cuda.is_available():
-                    states[state_name] = states[state_name].cuda()
+        if self._stepwise_training:
+            for state_name, size in zip(self._state_names, self._state_sizes):
+                if "init_{}".format(state_name) in context:
+                    states[state_name] = context["init_{}".format(state_name)]
+                    if len(states[state_name].shape) == 2:
+                        states[state_name] = states[state_name].unsqueeze(0)
+                    del context["init_{}".format(state_name)]
+                else:
+                    states[state_name] = Variable(torch.zeros((1, B, size)))
+                    if torch.cuda.is_available():
+                        states[state_name] = states[state_name].cuda()
         if extra_states is not None:
-            extra_states.update(extra_states)
+            states.update(extra_states)
         # Process mask
         context["src_mask"] = src_mask
         context["tgt_mask"] = tgt_mask
@@ -225,7 +227,14 @@ class EncoderDecoderModel(nn.Module):
         context, states = self.pre_decode(encoder_outputs, tgt_seq, src_mask=src_mask, tgt_mask=tgt_mask)
         decoder_outputs = self.decode(context, states)
         if self._shard_size is not None and self._shard_size > 0:
-            self.compute_shard_loss(decoder_outputs, tgt_seq, tgt_mask)
+            from nmtlab.utils.distributed import local_rank
+            if local_rank() == 0:
+                from line_profiler import LineProfiler
+                lp = LineProfiler()
+                compute_shard_loss = lp(self.compute_shard_loss)
+            else:
+                compute_shard_loss = self.compute_shard_loss
+            compute_shard_loss(decoder_outputs, tgt_seq, tgt_mask)
         else:
             logits = self.expand(decoder_outputs)
             loss = self.compute_loss(logits, tgt_seq, tgt_mask)
@@ -265,7 +274,7 @@ class EncoderDecoderModel(nn.Module):
         # Compute loss for each shard
         # The computation is performed on detached decoder states
         # Backpropagate the gradients to the deocder states
-        OPTS.disable_backward_hooks = True
+        OPTS.trainer.disable_grad_sync()
         for i in range(0, B, self._shard_size):
             j = i + self._shard_size
             decoder_outputs.select_batch(i, j, detach=True)
@@ -278,10 +287,11 @@ class EncoderDecoderModel(nn.Module):
             score_map["word_acc"].append(word_acc)
             if i >= B - self._shard_size:
                 # Enable the backward hooks to gather the gradients
-                OPTS.disable_backward_hooks = False
+                if is_grad_enabled:
+                    OPTS.trainer.enable_grad_sync(loss)
             if is_grad_enabled:
                 loss.backward()
-        OPTS.disable_backward_hooks = False
+        OPTS.trainer.enable_grad_sync()
         # Monitor scores
         monitors = {}
         for k in score_map:
@@ -294,6 +304,7 @@ class EncoderDecoderModel(nn.Module):
             state_tensors = [x[1] for x in detached_items]
             grads = [x[0].grad for x in detached_items]
             if backward:
+                OPTS.trainer.enable_grad_sync(state_tensors)
                 torch.autograd.backward(state_tensors, grads)
         else:
             state_tensors, grads = None, None
@@ -322,3 +333,10 @@ class EncoderDecoderModel(nn.Module):
             return x.half()
         else:
             return x.float()
+
+    def set_trainable_modules(self, modules):
+        self._trainable_modules = modules
+
+    def trainable_modules(self):
+        return self._trainable_modules
+

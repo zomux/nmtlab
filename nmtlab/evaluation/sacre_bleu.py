@@ -25,6 +25,8 @@ class SacreBLEUEvaluator(EvaluationKit):
     def evaluate(self, result_path):
         from sacrebleu import download_test_set, corpus_bleu, smart_open
         assert os.path.exists(result_path)
+        tmp_path = "/tmp/sacrebleu_tmp.txt"
+        self.recover_subwords(result_path, tmp_path)
         if self.dataset_token is not None:
             _, *refs = download_test_set(self.dataset_token, self.langpair_token)
             if not refs:

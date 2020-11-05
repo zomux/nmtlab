@@ -14,7 +14,6 @@ from abc import abstractmethod, ABCMeta
 
 import numpy as np
 import torch
-import torch.nn as nn
 from torch.optim.optimizer import Optimizer
 from torch.autograd import Variable
 from torchtext.data.batch import Batch
@@ -24,6 +23,7 @@ from nmtlab.utils import smoothed_bleu
 from nmtlab.dataset import MTDataset
 from nmtlab.schedulers import Scheduler
 from nmtlab.utils import OPTS
+from nmtlab.utils.distributed import execution_env
 
 ROOT_RANK = 0
 
@@ -33,8 +33,8 @@ class TrainerKit(object):
     """
     
     __metaclass__ = ABCMeta
-    
-    def __init__(self, model, dataset, optimizer, scheduler=None, multigpu=False, using_horovod=True):
+
+    def __init__(self, model, dataset, optimizer, optim_options=None, scheduler=None):
         """Create a trainer.
         Args:
             model (EncoderDecoderModel): The model to train.
@@ -43,15 +43,20 @@ class TrainerKit(object):
             scheduler (Scheduler): Training scheduler.
         """
         self._model = model
+        self._ddp_model = model
         self._dataset = dataset
         self._optimizer = optimizer
+        self._optim_options = optim_options
         self._scheduler = scheduler if scheduler is not None else Scheduler()
-        self._multigpu = multigpu
-        self._horovod = using_horovod
-        self._n_devices = 1
+        self._distributed = False
+        self._local_rank = 0
+        self._local_size = 1
+        self._init_callbacks = []
+        self._saving_func = None
+        self._loading_func = None
         self._cuda_avaiable = torch.cuda.is_available()
-        # Setup horovod1i
-        self.register_model(model)
+        # Setup multigpu
+        self._model = model
         self._n_devices = self.device_count()
         # Initialize common variables
         self._log_lines = []
@@ -73,58 +78,45 @@ class TrainerKit(object):
         self.log("nmtlab", "Training {} with {} parameters".format(
             self._model.__class__.__name__, len(list(self._model.named_parameters()))
         ))
+        optim_name = self._optimizer if type(self._optimizer) == str else self._optimizer.__class__.__name__
         self.log("nmtlab", "with {} and {}".format(
-            self._optimizer.__class__.__name__, self._scheduler.__class__.__name__
+            optim_name, self._scheduler.__class__.__name__
         ))
-        self.log("nmtlab", "Training data has {} batches".format(self._dataset.n_train_batch()))
+        if self._dataset.n_train_batch() > 0:
+            self.log("nmtlab", "Training data has {} batches".format(self._dataset.n_train_batch()))
         self._report_valid_data_hash()
-        device_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
-        self.log("nmtlab", "Running with {} GPUs ({})".format(
-            self.device_count(), device_name
-        ))
+
+    def set_dataset(self, dataset):
+        self._dataset = dataset
+        self._n_train_batch = self._dataset.n_train_batch()
+        self._batch_size = self._dataset.batch_size()
+        self._valid_freq = int(self._n_train_batch / self._n_valid_per_epoch)
+        self.log("nmtlab", "Training data has {} batches".format(self._dataset.n_train_batch()))
 
     def device_count(self):
-        if self._multigpu:
-            if self.using_horovod():
-                import horovod.torch as hvd
-                return hvd.size()
-            else:
-                return torch.cuda.device_count()
+        if self._distributed and torch.cuda.is_available():
+            return torch.cuda.device_count()
         else:
             return 1
 
     def register_model(self, model=None):
         """Register a model and send it to gpu(s).
         """
+        return
         if model is None:
             model = self._model
-        if self._multigpu and self._horovod:
-            # Horovod based
-            try:
-                import horovod.torch as hvd
-            except ImportError:
-                raise SystemError("horovod is not working, try to set using_horovod=False.")
-            from nmtlab.trainers.distributed_optim import FlexibleDistributedOptimizer
-            # Initialize Horovod
-            hvd.init()
-            # Pin GPU to be used to process local rank (one GPU per process)
-            torch.cuda.set_device(hvd.local_rank())
-            self._model = model
-            self._model.cuda()
-            self._optimizer = FlexibleDistributedOptimizer(self._optimizer, named_parameters=self._model.named_parameters())
-            hvd.broadcast_parameters(self._model.state_dict(), root_rank=ROOT_RANK)
-            # Set the scope of training data
-            self._dataset.set_gpu_scope(hvd.rank(), hvd.size())
-        elif self._multigpu:
-            # Pytorch-based multi gpu backend
-            model.cuda()
-            self._model = nn.DataParallel(model)
+        self._distributed_model = model
+        if self._distributed:
+            from torch.nn.parallel import DistributedDataParallel as DDP
+            # Pytorch-based DDP multi-gpu backend
+            torch.cuda.set_device(self._local_rank)
+            model = model.to(self._local_rank)
+            self._distributed_model = DDP(model)
+            self._dataset.set_gpu_scope(self._local_rank, self._local_size)
         elif torch.cuda.is_available():
             # Single-gpu case
-            self._model = model
-            self._model.cuda()
-        else:
-            self._model = model
+            model.cuda()
+        self._model = model
 
     def configure(self, save_path=None, clip_norm=0, n_valid_per_epoch=10, criteria="loss",
                   comp_fn=min, checkpoint_average=0,
@@ -159,6 +151,71 @@ class TrainerKit(object):
         """Run the training from begining to end.
         """
 
+    def _parse_optimizer(self):
+        """Parse optimizer from string
+        """
+        if type(self._optimizer) == str:
+            from torch import optim
+            assert hasattr(optim, self._optimizer)
+            cls = getattr(optim, self._optimizer)
+            if self._optim_options is None:
+                optim_opts = {}
+            else:
+                optim_opts = self._optim_options
+            if self._model.trainable_modules() is None:
+                params = self._ddp_model.parameters()
+            else:
+                module_set = set(self._model.trainable_modules())
+                params = []
+                for name, module in self._ddp_model.named_modules():
+                    if name.replace("module.", "") in module_set:
+                        params.extend(list(module.parameters()))
+            self._optimizer = cls(params, **optim_opts)
+
+    def prepare_distributed_training(self, local_rank, local_size):
+        from torch.nn.parallel import DistributedDataParallel as DDP
+        self._local_rank = local_rank
+        self._local_size = local_size
+        self._model = self._model.to(local_rank)
+        self._ddp_model = DDP(self._model, device_ids=[local_rank], find_unused_parameters=True)
+        OPTS.ddp_model = self._ddp_model
+        self._parse_optimizer()
+        self._report_valid_data_hash()
+        for callback in self._init_callbacks:
+            callback(self)
+
+    def add_init_callback(self, func):
+        self._init_callbacks.append(func)
+
+    def launch(self, distributed="auto"):
+        """Launch single/multi-device training.
+        Always use this method.
+        """
+        if distributed == "auto":
+            from nmtlab.utils.distributed import global_size
+            distributed = global_size() > 1
+        self._distributed = distributed
+        self._n_devices = self.device_count()
+        if distributed:
+            # Distribuited training with PyTorch DDP
+            import torch.multiprocessing as mp
+            from nmtlab.utils.distributed import local_size, node_size
+            from nmtlab.trainers.helpers import distributed_process
+            print("[nmtlab]", "Distributed training with {} GPUs ({}) on {} nodes".format(
+                local_size(), torch.cuda.get_device_name(0), node_size()
+            ))
+            mp.spawn(
+                distributed_process,
+                args=(local_size(), self._dataset, self),
+                nprocs=local_size(),
+                join=True
+            )
+        else:
+            raise SystemError("not distributed")
+            # Single-GPU training: register model and run
+            pass
+
+
     def extract_vars(self, batch):
         """Extract variables from batch
         """
@@ -187,15 +244,16 @@ class TrainerKit(object):
         """
         self._optimizer.zero_grad()
         vars = self.extract_vars(batch)
+        if self._ddp_model is not None and self._ddp_model is not self._model:
+            self._ddp_model._sync_params()
         val_map = self._model(*vars)
-        if self._multigpu and not self._horovod:
-            for k, v in val_map.items():
-                val_map[k] = v.mean()
+        #     for k, v in val_map.items():
+        #         val_map[k] = v.mean()
         if not OPTS.shard:
+            if self._ddp_model is not None and self._ddp_model is not self._model:
+                self._ddp_model.reducer.prepare_for_backward([val_map["loss"]])
             val_map["loss"].backward()
         if self._clip_norm > 0:
-            # if self._multigpu and self._horovod:
-            #     self._optimizer.synchronize()
             torch.nn.utils.clip_grad_norm_(self._model.parameters(), self._clip_norm)
         self._optimizer.step()
         self.print_progress(val_map)
@@ -213,23 +271,23 @@ class TrainerKit(object):
             is_improved = self.check_improvement(score_map)
             self._scheduler.after_valid(is_improved, score_map)
             self._model.train(True)
-            self.log("valid", "{}{} (epoch {}, step {})".format(
+            speed = float(self._current_step * self._batch_size) / (time.time() - self._begin_time) * self._n_devices
+            unit = "token" if self._dataset.batch_type() == "token" else "batch"
+            self.log("valid", "{}{} (epoch {}, step {}, {:.0f} {}/s)".format(
                 self._dict_str(score_map), " *" if is_improved else "",
-                self._current_epoch + 1, self._global_step + 1
+                self._current_epoch + 1, self._global_step + 1,
+                speed, unit
             ))
             # Record to tensorboard
             self.record_scores(score_map, is_improved)
         # Check new trainer settings when using horovod
-        if valid_condition and self._multigpu and self._horovod:
+        if valid_condition and self._distributed:
             self.synchronize_learning_rate()
-        if (self._current_step + 1) % 1000 == 0 and self._multigpu and self._horovod:
-            import horovod.torch as hvd
-            hvd.init()
-            from nmtlab.trainers.hvd_utils import broadcast_optimizer_state
-            import horovod.torch as hvd
-            broadcast_optimizer_state(self._optimizer, ROOT_RANK)
-            hvd.broadcast_parameters(self._model.state_dict(), ROOT_RANK)
-    
+            params = list(self._model.state_dict().values())
+            self._ddp_model._distributed_broadcast_coalesced(
+                params, self._ddp_model.broadcast_bucket_size
+            )
+
     def run_valid(self):
         """Run the model on the validation set and report loss.
         """
@@ -257,10 +315,7 @@ class TrainerKit(object):
                     score_map[k].append(v)
         # Convert to scalar
         for key, vals in score_map.items():
-            if self._multigpu and not self._horovod:
-                val = np.mean([v.mean().cpu() for v in vals])
-            else:
-                val = np.mean([v.cpu().detach() for v in vals])
+            val = np.mean([v.cpu().detach() for v in vals])
             score_map[key] = val
         return score_map
     
@@ -268,10 +323,7 @@ class TrainerKit(object):
         cri = score_map[self._criteria]
         self._checkpoint_count += 1
         if self._checkpoint_average > 0:
-            self.save(path=self._save_path + ".chk{}".format(self._checkpoint_count))
-            old_checkpoint = self._save_path + ".chk{}".format(self._checkpoint_count - self._checkpoint_average)
-            if os.path.exists(old_checkpoint):
-                os.remove(old_checkpoint)
+            self.save(path=self._save_path + ".chk{}".format(self._checkpoint_count % self._checkpoint_average + 1))
         # if cri < self._best_criteria - abs(self._best_criteria) * 0.001:
         if self._comp_fn(cri, self._best_criteria) == cri:
             self._best_criteria = cri
@@ -291,6 +343,7 @@ class TrainerKit(object):
                         self._tensorboard_namespace, key), val, self._global_step)
 
     def print_progress(self, val_map):
+        return
         progress = int(float(self._current_step) / self._n_train_batch * 100)
         speed = float(self._current_step * self._batch_size) / (time.time() - self._begin_time) * self._n_devices
         unit = "token" if self._dataset.batch_type() == "token" else "batch"
@@ -304,12 +357,11 @@ class TrainerKit(object):
         self._log_lines.append(line)
         if self._is_root_node():
             print(line)
+            sys.stdout.flush()
             if self._summary_writer is not None:
                 self._summary_writer.add_text(who, msg)
 
-    def save(self, path=None):
-        """Save the trainer to the given file path.
-        """
+    def state_dict(self):
         state_dict = {
             "epoch": self._current_epoch,
             "step": self._current_step,
@@ -318,15 +370,27 @@ class TrainerKit(object):
             "optimizer_state": self._optimizer.state_dict() if self.save_optim_state else None,
             "leanring_rate": self.learning_rate()
         }
+        return state_dict
+
+    def save(self, path=None):
+        """Save the trainer to the given file path.
+        """
+        state_dict = self.state_dict()
         if path is None:
             path = self._save_path
         if path is not None:
-            torch.save(state_dict, path)
-            open(self._save_path + ".log", "w").writelines([l + "\n" for l in self._log_lines])
+            if self._saving_func is not None:
+                self._saving_func(self, state_dict, path)
+            else:
+                torch.save(state_dict, path)
+                open(self._save_path + ".log", "w").writelines([l + "\n" for l in self._log_lines])
     
     def load(self, path=None):
         if path is None:
             path = self._save_path
+        if self._loading_func is not None:
+            self._loading_func(self, path)
+            return
         first_param = next(self._model.parameters())
         device_str = str(first_param.device)
         state_dict = torch.load(path, map_location=device_str)
@@ -340,16 +404,33 @@ class TrainerKit(object):
         # Manually setting learning rate may be redundant?
         if "learning_rate" in state_dict:
             self.set_learning_rate(state_dict["learning_rate"])
-    
+
+    def enable_grad_sync(self, tensors=None):
+        """Enable gradient synchronization for certain tensors
+        """
+        if self._distributed:
+            self._ddp_model.require_grad_sync = True
+            if tensors is not None:
+                if type(tensors) != list:
+                    tensors = [tensors]
+                self._ddp_model.reducer.prepare_for_backward(tensors)
+
+    def disable_grad_sync(self):
+        if self._distributed:
+            self._ddp_model.require_grad_sync = False
+
+    def is_distributed(self):
+        return self._distributed
+
     def is_finished(self):
         is_finished = self._scheduler.is_finished()
         if is_finished and self._summary_writer is not None:
             self._summary_writer.close()
-        if self._multigpu and self._horovod:
-            import horovod.torch as hvd
-            flag_tensor = torch.tensor(1 if is_finished else 0)
-            flag_tensor = hvd.broadcast(flag_tensor, ROOT_RANK)
-            return flag_tensor > 0
+        if self._distributed:
+            import torch.distributed as dist
+            flag_tensor = torch.tensor(1. if is_finished else 0.).cuda(self._local_rank)
+            dist.broadcast(flag_tensor, ROOT_RANK)
+            return flag_tensor.cpu().numpy() > 0.5
         else:
             return is_finished
     
@@ -359,11 +440,11 @@ class TrainerKit(object):
     def synchronize_learning_rate(self):
         """Synchronize learning rate over all devices.
         """
-        if self._multigpu and self._horovod:
-            import horovod.torch as hvd
-            lr = torch.tensor(self.learning_rate())
-            lr = hvd.broadcast(lr, ROOT_RANK)
-            new_lr = float(lr.numpy())
+        if self._distributed:
+            import torch.distributed as dist
+            lr = torch.tensor(self.learning_rate()).cuda(self._local_rank)
+            dist.broadcast(lr, ROOT_RANK)
+            new_lr = float(lr.cpu().numpy())
             if new_lr != self.learning_rate():
                 self.set_learning_rate(new_lr, silent=True)
         
@@ -372,6 +453,12 @@ class TrainerKit(object):
             g["lr"] = lr
         if self._is_root_node() and not silent:
             self.log("nmtlab", "change learning rate to {:.6f}".format(lr))
+
+    def set_save_function(self, func):
+        self._saving_func = func
+
+    def set_load_function(self, func):
+        self._loading_func = func
     
     def record_train_scores(self, scores):
         for k, val in scores.items():
@@ -442,6 +529,8 @@ class TrainerKit(object):
         """
         if not isinstance(self._dataset, MTDataset):
             return
+        if self._dataset.raw_valid_data() is None:
+            return
         import hashlib
         valid_list = [
             " ".join(example.tgt)
@@ -480,9 +569,6 @@ class TrainerKit(object):
                 bleus.append(smoothed_bleu(out_tokens, ref_tokens))
         return np.mean(bleus)
 
-    def using_horovod(self):
-        return self._horovod
-    
     @staticmethod
     def _dict_str(rmap):
         return " ".join(
@@ -490,10 +576,7 @@ class TrainerKit(object):
         )
     
     def _is_root_node(self):
-        if self._multigpu and self._horovod:
-            import horovod.torch as hvd
-            return hvd.rank() == ROOT_RANK
-        else:
-            return True
+        from nmtlab.utils.distributed import global_rank
+        return self._local_rank == 0 and global_rank() == 0
 
 

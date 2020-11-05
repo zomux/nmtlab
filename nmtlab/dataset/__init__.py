@@ -7,3 +7,4 @@ from __future__ import print_function
 
 from .base import Dataset
 from .mt_dataset import MTDataset
+from .transformer_dataset import FastTransformerDataset

@@ -120,10 +120,8 @@ class Transformer(EncoderDecoderModel):
             # During training: full sequence mode
             x = states.feedback_embed[:, :-1]
             temporal_mask = self.temporal_mask(x)
-            # print("full embed", x[1, :, :2])
             for l, layer in enumerate(self.decoder_layers):
                 x = layer(context.encoder_states, x, context.src_mask, temporal_mask)
-                # print("full {}".format(l), x[1, :, :2])
             states["final_states"] = self.decoder_norm(x)
         else:
             # During beam search: stepwise mode
